@@ -2,7 +2,7 @@
 
 本项目用 Hadoop MapReduce 从 31 天卡口数据中挖掘“伴随车”：两辆车如果多次在同一地点、短时间窗口内共同出现，就把它们作为候选伴随车对输出，并按共现次数排序。
 
-原始数据格式见 [伴随车数据说明.md](伴随车数据说明.md)，数据集获取方式见 [docs/data.md](docs/data.md)。开发说明见 [CONTRIBUTE.md](CONTRIBUTE.md)。
+原始数据格式见 [伴随车数据说明.md](伴随车数据说明.md)，数据集获取方式见 [docs/data.md](docs/data.md)。开发说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 目标功能
 
