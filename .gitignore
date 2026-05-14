@@ -26,6 +26,10 @@ spark-warehouse/
 metastore_db/
 derby.log
 
+# Hadoop FileSystem checksum sidecars next to fixture binaries — regenerated on
+# every read/write, so we keep them out of git and let Hadoop recompute them.
+tests/data/fixtures/.*.crc
+
 # Logs
 *.log
 logs/

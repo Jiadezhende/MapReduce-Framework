@@ -49,7 +49,7 @@ baseline 的主输出必须和 MR 保持一致：
 vidA,vidB,count
 ```
 
-按 `count` 降序排列。注意：MR Stage 2 的中间输出是 tab 分隔，最终用于 diff 的 baseline CSV 需要和 diff 工具约定一致；如果 diff 工具选择统一读 tab 或逗号，必须在 README 和脚本里同时说明。
+按 `count` 降序排列。MR Stage 2、Stage 3 主输出与 baseline 全部统一使用逗号分隔（详见 [docs/fixtures.md §3](../docs/fixtures.md#3-companionscsv--stage-2-主输出--stage-3-输入--stage-3-重整后)），diff 工具直接按逗号读取，无需做分隔符转换。
 
 ## diff 报告
 

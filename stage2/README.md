@@ -23,17 +23,17 @@ count = distinct number of (loc, slot) witnesses for this pair
 输出主结果：
 
 ```text
-vidA\tvidB\tcount
+vidA,vidB,count
 ```
 
-只输出 `count >= companion.k.min` 的 pair。
+只输出 `count >= companion.k.min` 的 pair。字节布局与文本 schema 详见 [docs/fixtures.md §3](../docs/fixtures.md#3-companionscsv--stage-2-主输出--stage-3-输入--stage-3-重整后)。
 
 ## 输入输出
 
 | 类型 | 路径 | 格式 |
 |---|---|---|
 | 输入 | `hdfs:///companion/pair_loc_slot/{phase}/` | `SequenceFile<PairKey, LocSlotWritable>` |
-| 主输出 | `hdfs:///companion/companions/{phase}/part-*` | 文本 `vidA\tvidB\tcount` |
+| 主输出 | `hdfs:///companion/companions/{phase}/part-*` | 文本 `vidA,vidB,count` |
 | 副输出 | `hdfs:///companion/companions/{phase}/_hll_pairs/` | 使用 HLL 估算的 pair 列表 |
 
 主输出 schema 是 Stage 3 和 baseline diff 的契约，字段顺序和分隔符不能改。
@@ -53,7 +53,7 @@ Reducer
   收到同一个 pair 的所有 witness
   对 (loc, slot) 去重
   计算 count
-  count >= k.min 时输出 vidA\tvidB\tcount
+  count >= k.min 时输出 vidA,vidB,count
 ```
 
 Combiner 只能减少重复 witness，不能提前输出最终 count。因为同一个 pair 的 witness 可能分布在多个 mapper 或 spill 中，下游 reducer 仍需要做全局去重。
@@ -83,7 +83,7 @@ Combiner 只能减少重复 witness，不能提前输出最终 count。因为同
 ## 必须保持的契约
 
 - 输入 `PairKey` 已保证 `vidA < vidB`，不要重新排序导致对象语义混乱。
-- 主输出固定为 tab 分隔：`vidA\tvidB\tcount`。
+- 主输出固定为逗号分隔：`vidA,vidB,count`，详见 [docs/fixtures.md §3](../docs/fixtures.md#3-companionscsv--stage-2-主输出--stage-3-输入--stage-3-重整后)。
 - `count` 的含义固定为 distinct `(loc, slot)` 数。
 - `count >= companion.k.min` 才能输出。
 - `_hll_pairs/` 只能作为副输出，不要污染主输出 schema。
@@ -111,6 +111,6 @@ Counter 组名固定为 `STAGE2`。
 ## 验收信号
 
 - `STAGE2.PAIRS_INPUT` 约等于 `STAGE1.PAIRS_EMITTED`。
-- 输出文件能被 Stage 3 按 `vidA\tvidB\tcount` 解析。
+- 输出文件能被 Stage 3 按 `vidA,vidB,count` 解析。
 - 非 HLL pair 与 baseline 的 count 精确一致。
 - `PAIRS_OUTPUT` 明显小于输入 witness 规模，说明阈值过滤生效。

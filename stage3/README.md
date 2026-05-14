@@ -9,8 +9,10 @@ Stage 3 是流水线的收尾阶段。它读取 Stage 2 的候选伴随车结果
 输入来自 Stage 2：
 
 ```text
-vidA\tvidB\tcount
+vidA,vidB,count
 ```
+
+文本 schema 详见 [docs/fixtures.md §3](../docs/fixtures.md#3-companionscsv--stage-2-主输出--stage-3-输入--stage-3-重整后)。
 
 Stage 3 需要输出三类交付物：
 
@@ -24,7 +26,7 @@ Stage 3 需要输出三类交付物：
 
 | 类型 | 路径 | 格式 |
 |---|---|---|
-| 输入 | `hdfs:///companion/companions/{phase}/` | 文本 `vidA\tvidB\tcount` |
+| 输入 | `hdfs:///companion/companions/{phase}/` | 文本 `vidA,vidB,count` |
 | 输入 | `hdfs:///companion/companions/{phase}/_hll_pairs/` | Stage 2 HLL pair 副输出 |
 | 输出 | `hdfs:///companion/final/{phase}/companions.csv/part-*` | 全局按 `count` 降序有序 |
 | 输出 | `hdfs:///companion/final/{phase}/top_n.csv` | TopN 单文件 |

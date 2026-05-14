@@ -32,7 +32,7 @@ R1 一次性把跨模块接口做齐做透，让 R2~R6 之后只 `import`、不�
 | 配置 key | `companion-conf.xml` + `CompanionConf` typed getter；**4 个 stage README 中出现的所有 key 全部预先声明**，包括暂时未实现的 stage-private key | 待逐 stage 核对补齐 |
 | HDFS 路径 | `CompanionPaths` 工具类，把 `input/{phase}` → `filtered/{phase}` → `pair_loc_slot/{phase}` → `companions/{phase}` → `final/{phase}` 全部封装；stage 代码不允许出现 `/companion/...` 字面量 | 待新增 |
 | Counter 名称 | 4 个 stage 的 13 个 Counter 名（见 [architecture.md §3](architecture.md#3-counter-naming)）做成常量类或 enum；stage 代码不允许字符串字面量 | 待新增 |
-| Fixture schema | [docs/fixtures.md](fixtures.md) 规定 `filtered.seq` / `pair_loc_slot.seq` / `companions.tsv` 的字节布局和最小有效记录 | 待新增 |
+| Fixture schema | [docs/fixtures.md](fixtures.md) 规定 `filtered.seq` / `pair_loc_slot.seq` / `companions.csv` 的字节布局和最小有效记录 | 已落 |
 | 时间 / 哈希工具 | `TimeUtil`、`HashUtil` | 已落 |
 | Scripts 骨架 | `scripts/env.sh`、`scripts/run_pipeline.sh`、`scripts/upload_to_hdfs.sh` 雏形（参数定义、HDFS 路径用 `CompanionPaths` 输出） | 部分已落，需要校对 |
 
@@ -62,7 +62,7 @@ R1 PR 合入即视为 Day 1 开始。下表给出每人**不依赖他人产出**
 | **R2** | stage0 mapper（CSV → `RecordWritable`），用 [tests/data/mini.csv](../tests/data/mini.csv) 做单测；profiler 跑 mini.csv 出长尾直方图 |
 | **R3** | 在 `stage1/src/test/resources/` 手写极小 `filtered.seq` fixture；写 stage1 mapper / reducer 单测；skew partitioner 纯单测 |
 | **R4** | 在 `stage2/src/test/resources/` 手写极小 `pair_loc_slot.seq` fixture；stage2 reducer 单测；HLL fallback 路径单测 |
-| **R5** | baseline pandas 实现（跑 [tests/data/mini.csv](../tests/data/mini.csv)，**完全不依赖 Hadoop**，Day 1 即可独立 PR）；stage3 的 total-order partitioner + TopN 写盘逻辑，用手写 `companions.tsv` fixture 做单测 |
+| **R5** | baseline pandas 实现（跑 [tests/data/mini.csv](../tests/data/mini.csv)，**完全不依赖 Hadoop**，Day 1 即可独立 PR）；stage3 的 total-order partitioner + TopN 写盘逻辑，用手写 `companions.csv` fixture 做单测 |
 | **R6** | `bench/parse_counters.py`（用 fake `.jhist` 文本做单测）；`monitor_cluster.sh` 雏形；[docs/report/04-performance.md](report/04-performance.md) M1/M2/M3 表头模板 |
 
 跨模块对账靠 fixture：每个 stage owner 同时在自己模块的 `src/test/resources/` 手写本 stage 的输入 fixture，单测先绿；上游 stage 完工后，`mvn verify` 会把上游真实输出 diff 到下游 fixture，字节级一致才算 pass。这一机制让 R2~R5 之间不再串行等待。
