@@ -69,7 +69,7 @@ mvn -B clean verify
 
 ```bash
 # 1. 上传原始 CSV 到 HDFS（维护者一次性操作；组员见 docs/data.md）
-scripts/upload_to_hdfs.sh 31.csv 1d.csv
+scripts/upload_to_hdfs.sh 1d.csv 7d.csv 31d.csv
 
 # 2. 准备 1d / 7d / 31d 输入切片
 # 当前由 R2 的切片工具负责，Stage0 读取 /companion/input/{phase}

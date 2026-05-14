@@ -2,12 +2,15 @@
 # Fetch a raw CSV sample from HDFS to the local repo root.
 #
 # Usage:
-#   ./fetch_dataset.sh [mini|1d|31d]    # default: 1d
+#   ./fetch_dataset.sh [1d|7d|31d]    # default: 1d
 #
-# - mini : already shipped with the repo at tests/data/mini.csv (no download).
-# - 1d   : 195 MB, UTC 2015-01-01 slice. Suitable for M1 development.
+# - 1d   : 195 MB, UTC 2015-01-01 slice. M1 development & local correctness work.
+# - 7d   : 1.4 GB, UTC 2015-01-01..07. M2 local debugging and baseline diff.
 # - 31d  : 5.8 GB, full dataset. Only pull if you really need it locally;
 #          MapReduce jobs can read straight from HDFS without a local copy.
+#
+# `mini` is NOT handled here — tests/data/mini.csv ships with the repo and is
+# only for automated tests, not for fetching or development.
 #
 # Source of truth on HDFS: ${COMPANION_ROOT}/input/raw/<name>.csv
 # Maintainer publishes by running scripts/upload_to_hdfs.sh on the master node.
@@ -21,19 +24,10 @@ source "${SCRIPT_DIR}/env.sh"
 SIZE="${1:-1d}"
 
 case "${SIZE}" in
-    mini)
-        local_path="${LOCAL_DATA_DIR}/tests/data/mini.csv"
-        if [[ -f "${local_path}" ]]; then
-            echo "mini sample already in repo: ${local_path}"
-            exit 0
-        fi
-        echo "ERROR: tests/data/mini.csv missing. Re-clone or run a fresh git pull." >&2
-        exit 1
-        ;;
-    1d|31d)
+    1d|7d|31d)
         ;;
     *)
-        echo "ERROR: size must be one of: mini, 1d, 31d" >&2
+        echo "ERROR: size must be 1d, 7d, or 31d (mini is test-only, ships in repo)" >&2
         exit 2
         ;;
 esac

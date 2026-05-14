@@ -14,12 +14,11 @@ target/
 .DS_Store
 Thumbs.db
 
-# Local data — too large to track, lives outside the repo's commit history
-31.csv
+# Local data — too large to track, lives outside the repo's commit history.
+# Only fixtures under tests/ are allowed in the repo; everything else (raw
+# datasets, baseline outputs, scratch CSVs) stays out of git history.
 *.csv
-!baseline/*.csv
 !tests/**/*.csv
-!docs/**/*.csv
 
 # Hadoop output / Spark work dirs
 hadoop-*/
