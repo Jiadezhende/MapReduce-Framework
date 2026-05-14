@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Companion vehicle mining — default parameters.
+  Override on the command line with `-Dcompanion.delta.t=600 …` or in a
+  per-environment fragment loaded after this file.
+-->
+<configuration>
+
+    <property>
+        <name>companion.t0</name>
+        <value>1420041600</value>
+        <description>Reference timestamp for ts normalization (seconds since epoch).</description>
+    </property>
+
+    <property>
+        <name>companion.delta.t</name>
+        <value>300</value>
+        <description>Co-occurrence time window in seconds. Two vehicles seen at the same loc within delta.t are paired.</description>
+    </property>
+
+    <property>
+        <name>companion.k.min</name>
+        <value>3</value>
+        <description>Threshold: pair must co-occur in at least k.min distinct (loc, slot) buckets to be emitted.</description>
+    </property>
+
+    <property>
+        <name>companion.slot.size</name>
+        <value>300</value>
+        <description>Time-bucket width in seconds; equal to delta.t. Cross-bucket pairs handled by tail-buffer in reducer.</description>
+    </property>
+
+    <property>
+        <name>companion.loc.skew.cap</name>
+        <value>200000</value>
+        <description>Max vehicles per (loc, slot) before salt slicing is applied to avoid pair explosion.</description>
+    </property>
+
+    <property>
+        <name>companion.pair.salt.n</name>
+        <value>16</value>
+        <description>Salt bucket count for pair-key partitioning in Stage 2 (prevents hot-pair reducer skew).</description>
+    </property>
+
+    <property>
+        <name>companion.top.n</name>
+        <value>10000</value>
+        <description>How many top pairs (by count) to emit in Stage 3 alongside the full result.</description>
+    </property>
+
+    <property>
+        <name>companion.stage1.reducers</name>
+        <value>8</value>
+        <description>Stage 1 reducer count for the 1d profile. Bump to 32 (7d) / 128 (31d) via -D override.</description>
+    </property>
+
+    <property>
+        <name>companion.stage2.reducers</name>
+        <value>8</value>
+        <description>Stage 2 reducer count for the 1d profile.</description>
+    </property>
+
+    <property>
+        <name>companion.salt.seed</name>
+        <value>20260514</value>
+        <description>Seed for J1 salt slicing. Change to run J1b with a second seed and merge results to recover skew loss.</description>
+    </property>
+
+</configuration>

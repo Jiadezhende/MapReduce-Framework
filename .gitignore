@@ -1,0 +1,32 @@
+# Maven
+target/
+*.jar
+!**/src/test/resources/**/*.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data — too large to track, lives outside the repo's commit history
+31.csv
+*.csv
+!baseline/*.csv
+!tests/**/*.csv
+!docs/**/*.csv
+
+# Hadoop output / Spark work dirs
+hadoop-*/
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Logs
+*.log
+logs/
