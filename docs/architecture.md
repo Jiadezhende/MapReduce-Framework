@@ -8,7 +8,7 @@ All paths are relative to `${COMPANION_ROOT}` (default `/companion`).
 
 ```
 ${COMPANION_ROOT}/
-├── input/raw/                       # Raw 31.csv chunks (owner: R1 upload_to_hdfs.sh)
+├── input/raw/                       # Raw 31d.csv chunks (owner: R1 upload_to_hdfs.sh)
 ├── input/{1d,7d,31d}/               # Per-phase slices (owner: R2 split_by_day.sh)
 ├── filtered/{1d,7d,31d}/            # SequenceFile after J0 (owner: R2)
 ├── pair_loc_slot/{1d,7d,31d}/       # SequenceFile after J1 (owner: R3)
