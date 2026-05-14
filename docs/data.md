@@ -1,0 +1,56 @@
+# 数据集获取
+
+原始卡口数据共三份规模，按 `vid,loc,unix_ts` 三列存放。开发先用 1d 跑通，扩到 7d/31d 做里程碑验证。数据格式见 [伴随车数据说明.md](../伴随车数据说明.md)。
+
+## 三种规模
+
+| 名称 | 大小 | 行数 | 时间范围（UTC） | 用途 |
+|---|---|---|---|---|
+| `mini` | 2.0 MB | 100,000 | 2015-01-01 00:00:02 起 | 单元测试 / 算法 demo / CI |
+| `1d` | 195 MB | 9,279,659 | 2015-01-01 00:00 – 23:59 | M1 开发与正确性验证 |
+| `31d` | 5.8 GB | 275,893,209 | 2015-01-01 – 2015-01-31 | M2 / M3 全量评测 |
+
+`1d.csv` 由 `31.csv` 用 `awk -F',' '$3>=1420041600 && $3<1420128000 {print} $3>=1420128000 {exit}'` 切出，因此每条记录都来自 31d 的对应子集，便于做正确性 diff。
+
+## 校验
+
+```text
+sha256  31.csv              ce1cfc066248af5db6745c14ed63431213443ba53e45547d92ed6eed0960f7ea
+sha256  1d.csv              63bc24213f6701373924fdadcab0ec3ff76e9fa4b342ca013e60d9510adc0287
+sha256  tests/data/mini.csv 4dc507f55766492b28ea4b4adaa2e69127febcf94a7ab8ac9d4b0aaefb2ab79f
+```
+
+下载完用 `sha256sum` 比对，避免半传文件污染流水线。
+
+## 分发方式
+
+**集群路径才是唯一可信源。** 维护者在 master 上把 csv 推到 HDFS 的 `${COMPANION_ROOT}/input/raw/`（默认 `/companion/input/raw/`），所有阶段都从这里读输入：
+
+```bash
+# 维护者：一次性推送（之后增量更新也走这条命令，-put -f 覆盖）
+scripts/upload_to_hdfs.sh 31.csv 1d.csv
+```
+
+组员有两种用法：
+
+### 1. 直接对 HDFS 跑（推荐）
+
+不必把 5.8 GB 拉回本地。Stage0 已经从 `${COMPANION_ROOT}/input/${phase}` 读输入，切片完成后流水线就能跑：
+
+```bash
+scripts/run_pipeline.sh --days 1
+```
+
+### 2. 把样例拉到本地做单机调试
+
+```bash
+scripts/fetch_dataset.sh mini    # 已随 git 走，零成本
+scripts/fetch_dataset.sh 1d      # 195 MB，常用
+scripts/fetch_dataset.sh 31d     # 5.8 GB，仅当确实需要本地全量时
+```
+
+脚本会校验大小、跳过已存在的同名同大小文件，幂等。
+
+## 不在 git 仓库里的原因
+
+`*.csv` 已经被 [.gitignore](../.gitignore) 排除（白名单仅 `tests/**/*.csv` 等几条），所以 `1d.csv` / `31.csv` 永远走分发渠道而不是 git 历史。`tests/data/mini.csv` 是唯一进 git 的样例，足够做单元测试。
