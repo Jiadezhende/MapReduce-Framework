@@ -1,6 +1,6 @@
 # tools/profiler - 长尾分布统计
 
-**Owner**: R2
+**Owner**: R2（详见 [docs/roles.md](../../docs/roles.md)）
 
 profiler 用来在正式跑流水线前了解数据分布，尤其是车辆和地点的长尾情况。它的结果会影响 Stage 0 的过滤策略、Stage 1 的热点桶处理，以及 bench 的 skew 分析。
 

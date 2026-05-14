@@ -1,6 +1,6 @@
 # Stage 3 - 全局排序、TopN 与指标导出
 
-**Owner**: R4
+**Owner**: R5（详见 [docs/roles.md](../docs/roles.md)）
 
 Stage 3 是流水线的收尾阶段。它读取 Stage 2 的候选伴随车结果，按 `count` 降序全局排序，输出完整结果、TopN 文件和运行指标。
 

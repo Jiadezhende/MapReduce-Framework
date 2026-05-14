@@ -1,5 +1,7 @@
 # common - 共享语义与接口契约
 
+**Owner**: R1（同时维护 [docs/architecture.md](../docs/architecture.md) 和 [scripts/](../scripts/) 骨架；详见 [docs/roles.md](../docs/roles.md)）
+
 `common` 是整条 MapReduce 流水线的公共接口层。它不实现具体业务 stage，但定义了各 stage 之间传递数据、读取配置、提交 Job 和计算分区/时间桶时必须遵守的语义。
 
 如果修改 `common` 中的 Writable 字节布局、配置 key、Counter 组名或工具函数语义，需要同步检查 `stage0` 到 `stage3`、`baseline`、`bench` 和 [docs/architecture.md](/home/ywc/MapReduce-Framework/docs/architecture.md)。

@@ -1,6 +1,6 @@
 # Stage 0 - 预处理与单次车过滤
 
-**Owner**: R2
+**Owner**: R2（详见 [docs/roles.md](../docs/roles.md)）
 
 Stage 0 是流水线的入口。它把原始 CSV 变成下游可直接读取的 `SequenceFile`，并尽早过滤只出现 1 次的车辆，减少 Stage 1 的配对规模。
 

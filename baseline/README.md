@@ -1,6 +1,6 @@
 # baseline - 对照基线与正确性校验
 
-**Owner**: R5
+**Owner**: R5（同时负责 [stage3/](../stage3/)；详见 [docs/roles.md](../docs/roles.md)）
 
 baseline 模块不参与生产流水线计算。它的作用是提供独立实现，用来判断 MapReduce 结果是否正确。
 

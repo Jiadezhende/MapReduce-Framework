@@ -1,6 +1,6 @@
 # Architecture — Companion Vehicle Mining
 
-This document is the contract between modules. R1 maintains it; every change requires sign-off from owners of affected stages.
+This document is the contract between modules. R1 maintains it; every change requires sign-off from owners of affected stages. Full role allocation lives in [roles.md](roles.md).
 
 ## 1. HDFS layout
 
@@ -13,7 +13,7 @@ ${COMPANION_ROOT}/
 ├── filtered/{1d,7d,31d}/            # SequenceFile after J0 (owner: R2)
 ├── pair_loc_slot/{1d,7d,31d}/       # SequenceFile after J1 (owner: R3)
 ├── companions/{1d,7d,31d}/          # CSV after J2 threshold filter (owner: R4)
-├── final/{1d,7d,31d}/               # Sorted CSV + TopN + metrics (owner: R4)
+├── final/{1d,7d,31d}/               # Sorted CSV + TopN + metrics (owner: R5)
 │   ├── companions.csv
 │   ├── top_n.csv
 │   └── _metrics.json
@@ -34,7 +34,7 @@ All keys live in `common/src/main/resources/companion-conf.xml` and are accessed
 | `companion.slot.size` | 300 | R3 |
 | `companion.loc.skew.cap` | 200000 | R3 |
 | `companion.pair.salt.n` | 16 | R4 |
-| `companion.top.n` | 10000 | R4 |
+| `companion.top.n` | 10000 | R5 |
 | `companion.stage1.reducers` | 8 (1d) / 32 (7d) / 128 (31d) | R3, R6 |
 | `companion.stage2.reducers` | 8 (1d) / 32 (7d) / 128 (31d) | R4, R6 |
 | `companion.salt.seed` | 20260514 | R3 (J1a / J1b) |
@@ -89,10 +89,10 @@ The first two positional args are input/output; everything else is config overri
 ## 6. Dependencies between modules
 
 ```
-common  →  stage0  →  stage1  →  stage2  →  stage3
-                                              ↓
-                              baseline (R5)  ←  cross-check
-                              bench    (R6)  ←  metrics + counters
+common (R1)  →  stage0 (R2)  →  stage1 (R3)  →  stage2 (R4)  →  stage3 (R5)
+                                                                  ↓
+                                                  baseline (R5)  ←  cross-check
+                                                  bench    (R6)  ←  metrics + counters
 ```
 
 No back-edges. Common has zero internal deps (only Hadoop + slf4j). Stage modules import only `common`.

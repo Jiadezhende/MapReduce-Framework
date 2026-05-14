@@ -1,6 +1,6 @@
 # bench - 性能评测与运行报告
 
-**Owner**: R6
+**Owner**: R6（同时负责整合报告 stitching；详见 [docs/roles.md](../docs/roles.md)）
 
 bench 模块负责评估整条 MapReduce 流水线的性能表现。它不修改 stage 代码，只负责运行参数扫表、采集指标、分析瓶颈并产出报告。
 

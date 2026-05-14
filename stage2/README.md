@@ -1,6 +1,6 @@
 # Stage 2 - 共现计数与阈值过滤
 
-**Owner**: R4
+**Owner**: R4（详见 [docs/roles.md](../docs/roles.md)）
 
 Stage 2 把 Stage 1 产生的“车辆对见证流”汇总成最终候选伴随车对。它负责按车辆对去重 `(loc, slot)`，计算 `count`，并过滤掉 `count < companion.k.min` 的 pair。
 

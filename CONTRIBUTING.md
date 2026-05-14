@@ -17,10 +17,11 @@
 1. 读 [README.md](README.md)，确认项目目标、流水线和构建运行方式。
 2. 读 [伴随车数据说明.md](伴随车数据说明.md)，确认原始输入字段含义。
 3. 读 [docs/architecture.md](docs/architecture.md)，确认 HDFS 路径、配置、Counter 和模块依赖。
-4. 读 [common/README.md](common/README.md)，理解 Writable、配置封装、Job 基类和工具函数的语义。
-5. 按顺序读 `stage0/README.md`、`stage1/README.md`、`stage2/README.md`、`stage3/README.md`，确认每个 stage 的输入、输出和验收信号。
-6. 读 `baseline/README.md`，理解正确性 diff 和 golden set。
-7. 读 `bench/README.md`，理解性能评测、参数扫表和 M1 / M2 / M3 报告。
+4. 读 [docs/roles.md](docs/roles.md)，确认角色分工、R1 前置 PR 的 checklist 和 Day 1 启动任务。
+5. 读 [common/README.md](common/README.md)，理解 Writable、配置封装、Job 基类和工具函数的语义。
+6. 按顺序读 `stage0/README.md`、`stage1/README.md`、`stage2/README.md`、`stage3/README.md`，确认每个 stage 的输入、输出和验收信号。
+7. 读 `baseline/README.md`，理解正确性 diff 和 golden set。
+8. 读 `bench/README.md`，理解性能评测、参数扫表和 M1 / M2 / M3 报告。
 
 ## 模块契约
 

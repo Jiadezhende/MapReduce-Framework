@@ -1,6 +1,6 @@
 # Stage 1 - 滑动窗口配对
 
-**Owner**: R3
+**Owner**: R3（详见 [docs/roles.md](../docs/roles.md)）
 
 Stage 1 的职责是把“车辆出现记录”转换成“车辆对见证”。只要两辆车在同一地点、时间差不超过 `companion.delta.t`，就输出一次该车辆对在某个 `(loc, slot)` 中共同出现的见证。
 
