@@ -7,6 +7,13 @@
 : "${HADOOP_BIN:=hadoop}"
 : "${LOCAL_DATA_DIR:=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
+# Non-login submit: every cluster operation goes through `ssh ${MASTER_HOST}`.
+# Override MASTER_HOST in ~/.ssh/config or via env if your alias differs.
+: "${MASTER_HOST:=master}"
+: "${HDFS_INPUT_ROOT:=${COMPANION_ROOT}/input/raw}"
+: "${HDFS_RUN_ROOT_BASE:=/tmp/${USER}/companion/runs}"
+: "${REMOTE_SUBMIT_BASE:=/tmp/${USER}/companion-submit}"
+
 # Submit-side knobs. Override in a per-user wrapper if needed.
 : "${YARN_QUEUE:=default}"
 : "${STAGE1_REDUCERS_1D:=8}"
@@ -17,6 +24,7 @@
 : "${STAGE2_REDUCERS_31D:=128}"
 
 export COMPANION_ROOT HADOOP_CONF_DIR HADOOP_BIN LOCAL_DATA_DIR YARN_QUEUE
+export MASTER_HOST HDFS_INPUT_ROOT HDFS_RUN_ROOT_BASE REMOTE_SUBMIT_BASE
 export STAGE1_REDUCERS_1D STAGE1_REDUCERS_7D STAGE1_REDUCERS_31D
 export STAGE2_REDUCERS_1D STAGE2_REDUCERS_7D STAGE2_REDUCERS_31D
 

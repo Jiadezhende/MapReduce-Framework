@@ -30,11 +30,11 @@ R1 一次性把跨模块接口做齐做透，让 R2~R6 之后只 `import`、不�
 | Writable 字节布局 | `RecordWritable` / `CompositeKey` / `PairKey` / `LocSlotWritable` | 已落 |
 | Job 入口 | `AbstractCompanionJob`，前两个参数固定 input / output | 已落 |
 | 配置 key | `companion-conf.xml` + `CompanionConf` typed getter；**4 个 stage README 中出现的所有 key 全部预先声明**，包括暂时未实现的 stage-private key | 待逐 stage 核对补齐 |
-| HDFS 路径 | `CompanionPaths` 工具类，把 `input/{phase}` → `filtered/{phase}` → `pair_loc_slot/{phase}` → `companions/{phase}` → `final/{phase}` 全部封装；stage 代码不允许出现 `/companion/...` 字面量 | 待新增 |
+| HDFS 路径 | `CompanionPaths` 工具类，把 `input/raw/{phase}.csv` → `vid_freq/{phase}` → `filtered/{phase}` → `pair_loc_slot/{phase}` → `companions/{phase}` → `final/{phase}` 全部封装；stage 代码不允许出现 `/companion/...` 字面量 | 待新增 |
 | Counter 名称 | 4 个 stage 的 13 个 Counter 名（见 [architecture.md §3](architecture.md#3-counter-naming)）做成常量类或 enum；stage 代码不允许字符串字面量 | 待新增 |
 | Fixture schema | [docs/fixtures.md](fixtures.md) 规定 `filtered.seq` / `pair_loc_slot.seq` / `companions.csv` 的字节布局和最小有效记录 | 已落 |
 | 时间 / 哈希工具 | `TimeUtil`、`HashUtil` | 已落 |
-| Scripts 骨架 | `scripts/env.sh`、`scripts/run_pipeline.sh`、`scripts/upload_to_hdfs.sh` 雏形（参数定义、HDFS 路径用 `CompanionPaths` 输出） | 部分已落，需要校对 |
+| Scripts 骨架 | `scripts/env.sh`、`scripts/cluster_run.sh`、`scripts/cluster_status.sh`、`scripts/cluster_head.sh`、`scripts/upload_to_hdfs.sh`、`scripts/fetch_dataset.sh` 全部走非登录模式（scp + ssh master），无登录 master 行为 | 已落 |
 
 ### "做齐"的两条机械化判据
 

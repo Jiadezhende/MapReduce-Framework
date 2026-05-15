@@ -71,6 +71,60 @@
 | M2 | 7d | 30 分钟内完成，热点切分有效，max reducer <= 2 * mean |
 | M3 | 31d | shuffle < 20 GB，max reducer <= 3 * mean，完成性能和正确性报告 |
 
+## 集群协作开发流程
+
+集群采用「本地驱动、master 只作为 Hadoop submit host」的非登录模式。开发者不登录 master，本地仓库唯一入口是 `scripts/cluster_run.sh`，它通过非交互 `ssh master ...` 调用 master 上的 `hadoop` 命令。
+
+### 规范
+
+- 开发者只在本地写代码、跑单测、打包。
+- master 不作为开发机，不放项目源码，不放项目脚本；只在 `/tmp/$USER/companion-submit/<run_id>/jars/` 临时承载本次提交的 jar。
+- 所有集群任务由本地 `scripts/cluster_run.sh` 非登录式提交，不要手动 `ssh` 进 master 跑 `hadoop jar`。
+- 共享输入 `/companion/input/raw/{1d,7d,31d}.csv` 只读，只有数据维护者能更新。
+- 个人测试输出必须写入 `/tmp/$USER/companion/runs/<run_id>/`，禁止写入 `/companion/{filtered,pair_loc_slot,companions,final}/`。
+- 每次提交生成独立 `run_id`，不覆盖别人的结果，也不覆盖自己的旧结果。
+- 1d 通过后才能跑 7d；31d 由集成负责人统一跑。
+- `fetch_dataset.sh` 只用于本地 baseline/debug，不用于常规集群 E2E。
+
+### 标准命令
+
+```bash
+# 本地单测
+mvn -pl stage1 -am test
+
+# 本地构建并提交 1d 端到端
+scripts/cluster_run.sh --days 1 --build
+
+# 查看输出（无须登录 master）
+scripts/cluster_status.sh <run_id>
+scripts/cluster_head.sh   <run_id> final 1d
+
+# 继续用同一个 run_id 从某个 stage 往后跑
+scripts/cluster_run.sh --days 1 --run-id <run_id> --from stage2 --until stage3
+```
+
+### Stage 负责人各自的最小验证命令
+
+| 角色 | 命令 |
+|---|---|
+| Stage0 | `scripts/cluster_run.sh --days 1 --stage stage0 --build` |
+| Stage1 | `scripts/cluster_run.sh --days 1 --from stage0 --until stage1 --build` |
+| Stage2 | `scripts/cluster_run.sh --days 1 --from stage0 --until stage2 --build` |
+| Stage3 | `scripts/cluster_run.sh --days 1 --build` |
+
+v1 默认每个 run 的依赖都在自己的 run root 内闭环（即下游 stage 仍要从 stage0 把上游补齐）。等集成负责人产出 `/companion/snapshots/current/` 稳定快照后，再开放 `--upstream snapshot` 让下游 stage 复用快照。
+
+### `--from / --until` 与依赖
+
+```text
+--from stage0   从 raw 开始跑（默认）
+--from stage1   要求当前 run root 已有 filtered/{phase}
+--from stage2   要求当前 run root 已有 pair_loc_slot/{phase}
+--from stage3   要求当前 run root 已有 companions/{phase}
+```
+
+缺依赖时脚本会直接报错并提示改用 `--from stage0` 或指定一个已存在 stage 输出的 `--run-id`。
+
 ## 修改 common 的注意事项
 
 `common` 是跨模块接口层，修改影响面最大：

@@ -34,14 +34,15 @@ CSV
 对应 HDFS 路径：
 
 ```text
-/companion/input/{1d,7d,31d}
-  -> /companion/filtered/{phase}
-  -> /companion/pair_loc_slot/{phase}
-  -> /companion/companions/{phase}
-  -> /companion/final/{phase}
+/companion/input/raw/{1d,7d,31d}.csv              # 共享只读，由数据维护者上传
+  -> /tmp/$USER/companion/runs/<run_id>/vid_freq/{phase}
+  -> /tmp/$USER/companion/runs/<run_id>/filtered/{phase}
+  -> /tmp/$USER/companion/runs/<run_id>/pair_loc_slot/{phase}
+  -> /tmp/$USER/companion/runs/<run_id>/companions/{phase}
+  -> /tmp/$USER/companion/runs/<run_id>/final/{phase}
 ```
 
-`{phase}` 表示数据规模，取值为 `1d`、`7d`、`31d`。开发时先跑 1 天数据验证正确性，再扩到 7 天和 31 天。
+`{phase}` 表示数据规模，取值为 `1d`、`7d`、`31d`。开发时先跑 1 天数据验证正确性，再扩到 7 天和 31 天。每次提交生成独立 `run_id`，所有中间产物落到个人 run root，多人并行互不覆盖。
 
 ## 目录结构
 
@@ -67,30 +68,42 @@ mvn -B clean verify
 
 ## 运行
 
+所有集群操作都从本地仓库通过非交互 `ssh master ...` 触发，不需要登录 master，本地也不需要装 hadoop。
+
 ```bash
 # 1. 上传原始 CSV 到 HDFS（维护者一次性操作；组员见 docs/data.md）
 scripts/upload_to_hdfs.sh 1d.csv 7d.csv 31d.csv
 
-# 2. 准备 1d / 7d / 31d 输入切片
-# 当前由 R2 的切片工具负责，Stage0 读取 /companion/input/{phase}
+# 2. 本地构建并提交 1d 端到端
+scripts/cluster_run.sh --days 1 --build --dry-run    # 先看命令
+scripts/cluster_run.sh --days 1 --build              # 实际提交
 
-# 3. 查看或提交流水线
-scripts/run_pipeline.sh --days 1 --dry-run
-scripts/run_pipeline.sh --days 1
+# 3. 不登录 master 也能看结果
+scripts/cluster_status.sh <run_id>
+scripts/cluster_head.sh   <run_id> final 1d
 ```
 
 配置可以用 `-D` 覆盖，例如：
 
 ```bash
-scripts/run_pipeline.sh --days 1 -Dcompanion.delta.t=600 -Dcompanion.k.min=5
+scripts/cluster_run.sh --days 1 -Dcompanion.delta.t=600 -Dcompanion.k.min=5
 ```
+
+只想跑某个 stage、或者在已有 `run_id` 上从中间往后续：
+
+```bash
+scripts/cluster_run.sh --days 1 --stage stage1 --build
+scripts/cluster_run.sh --days 1 --run-id <run_id> --from stage2 --until stage3
+```
+
+具体协作约定见 [CONTRIBUTING.md](CONTRIBUTING.md) 的「集群协作开发流程」一节。
 
 ## 输出
 
 默认输出位于：
 
 ```text
-/companion/final/{phase}/
+/tmp/$USER/companion/runs/<run_id>/final/{phase}/
 ```
 
 主要文件：

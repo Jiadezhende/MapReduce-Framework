@@ -4,23 +4,32 @@ This document is the contract between modules. R1 maintains it; every change req
 
 ## 1. HDFS layout
 
-All paths are relative to `${COMPANION_ROOT}` (default `/companion`).
+Two trees:
+
+1. **Shared, read-only** under `${COMPANION_ROOT}` (default `/companion`). Only data maintainers and the integration owner write here.
+2. **Per-run, per-user** under `/tmp/${USER}/companion/runs/<run_id>/`. Every `scripts/cluster_run.sh` invocation creates a fresh `run_id` so concurrent developers do not collide.
 
 ```
 ${COMPANION_ROOT}/
-├── input/raw/                       # Raw 31d.csv chunks (owner: R1 upload_to_hdfs.sh)
-├── input/{1d,7d,31d}/               # Per-phase slices (owner: R2 split_by_day.sh)
-├── filtered/{1d,7d,31d}/            # SequenceFile after J0 (owner: R2)
-├── pair_loc_slot/{1d,7d,31d}/       # SequenceFile after J1 (owner: R3)
-├── companions/{1d,7d,31d}/          # CSV after J2 threshold filter (owner: R4)
-├── final/{1d,7d,31d}/               # Sorted CSV + TopN + metrics (owner: R5)
-│   ├── companions.csv
-│   ├── top_n.csv
-│   └── _metrics.json
-└── profile/                         # Long-tail histograms (owner: R2)
+├── input/raw/{1d,7d,31d}.csv         # Raw CSV (owner: R1 upload_to_hdfs.sh)
+├── snapshots/current/                # Stable cross-stage snapshots (v2, integration-owner only)
+│   ├── filtered/{phase}/
+│   ├── pair_loc_slot/{phase}/
+│   └── companions/{phase}/
+└── profile/                          # Long-tail histograms (owner: R2)
+
+/tmp/${USER}/companion/runs/<run_id>/  # Per-run personal workspace (cluster_run.sh)
+├── vid_freq/{phase}/                 # Stage0a output
+├── filtered/{phase}/                 # Stage0b output (SequenceFile)
+├── pair_loc_slot/{phase}/            # Stage1 output (SequenceFile)
+├── companions/{phase}/               # Stage2 output (CSV after threshold)
+└── final/{phase}/                    # Stage3 output (sorted CSV + TopN + metrics)
+    ├── companions.csv
+    ├── top_n.csv
+    └── _metrics.json
 ```
 
-`{phase} ∈ {1d, 7d, 31d}` tags the dataset slice; the same pipeline runs at three scales.
+`{phase} ∈ {1d, 7d, 31d}` tags the dataset scale; the same pipeline runs at three scales. Stage0 reads `${COMPANION_ROOT}/input/raw/${phase}.csv` directly — v1 does not depend on a pre-sliced `input/{phase}/` directory.
 
 ## 2. Configuration keys
 

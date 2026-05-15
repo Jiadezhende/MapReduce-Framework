@@ -33,7 +33,7 @@ sha256  tests/data/mini.csv 4dc507f55766492b28ea4b4adaa2e69127febcf94a7ab8ac9d4b
 
 ## 分发方式
 
-**集群路径才是唯一可信源。** 维护者在 master 上把 csv 推到 HDFS 的 `${COMPANION_ROOT}/input/raw/`（默认 `/companion/input/raw/`），所有阶段都从这里读输入：
+**集群路径才是唯一可信源。** 维护者在本地通过 `scripts/upload_to_hdfs.sh`（脚本内部走 scp + ssh，本地无需 hadoop）把 csv 推到 HDFS 的 `${COMPANION_ROOT}/input/raw/`（默认 `/companion/input/raw/`），所有阶段都从这里读输入：
 
 ```bash
 # 维护者：一次性推送（之后增量更新也走这条命令，-put -f 覆盖）
@@ -44,10 +44,10 @@ scripts/upload_to_hdfs.sh 1d.csv 7d.csv 31d.csv
 
 ### 1. 直接对 HDFS 跑（推荐）
 
-不必把 5.8 GB 拉回本地。Stage0 已经从 `${COMPANION_ROOT}/input/${phase}` 读输入，切片完成后流水线就能跑：
+不必把 5.8 GB 拉回本地。Stage0 直接读 `${COMPANION_ROOT}/input/raw/${phase}.csv`：
 
 ```bash
-scripts/run_pipeline.sh --days 1
+scripts/cluster_run.sh --days 1 --build
 ```
 
 ### 2. 把样例拉到本地做单机调试
