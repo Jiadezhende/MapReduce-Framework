@@ -18,7 +18,6 @@
         <module>stage1</module>
         <module>stage2</module>
         <module>stage3</module>
-        <module>tests/mini-cluster-smoke</module>
     </modules>
 
     <properties>
@@ -61,13 +60,6 @@
                 <artifactId>hadoop-common</artifactId>
                 <version>${hadoop.version}</version>
                 <scope>provided</scope>
-            </dependency>
-
-            <dependency>
-                <groupId>org.apache.hadoop</groupId>
-                <artifactId>hadoop-minicluster</artifactId>
-                <version>${hadoop.version}</version>
-                <scope>test</scope>
             </dependency>
 
             <dependency>
