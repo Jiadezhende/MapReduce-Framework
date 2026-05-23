@@ -24,9 +24,9 @@ Stage 0 需要完成三件事：
 
 | 类型 | 路径 | 格式 |
 |---|---|---|
-| 输入 | `hdfs:///companion/input/{phase}/*.csv` | 文本行 `vid,loc,ts` |
-| 中间结果 | `hdfs:///companion/_stage0/freq_bloom/{phase}` | 出现次数 `>= 2` 的 vid 集合 |
-| 输出 | `hdfs:///companion/filtered/{phase}/part-*` | `SequenceFile<NullWritable, RecordWritable>` |
+| 输入 | `${COMPANION_ROOT}/input/raw/{phase}.csv` | 文本行 `vid,loc,ts` |
+| 中间结果 | `/tmp/${USER}/companion/runs/<run_id>/vid_freq/{phase}` | 出现次数 `>= 2` 的 vid 集合 |
+| 输出 | `/tmp/${USER}/companion/runs/<run_id>/filtered/{phase}/part-*` | `SequenceFile<NullWritable, RecordWritable>` |
 
 `{phase}` 取值为 `1d`、`7d`、`31d`。
 

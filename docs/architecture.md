@@ -47,6 +47,8 @@ All keys live in `common/src/main/resources/companion-conf.xml` and are accessed
 | `companion.stage1.reducers` | 8 (1d) / 32 (7d) / 128 (31d) | R3, R6 |
 | `companion.stage2.reducers` | 8 (1d) / 32 (7d) / 128 (31d) | R4, R6 |
 | `companion.salt.seed` | 20260514 | R3 (J1a / J1b) |
+| `companion.vid_freq.path` | empty | R2 (Stage0b) |
+| `companion.stage0.snappy.enabled` | true | R2 |
 
 Override on submit with `-D companion.delta.t=600 …`.
 

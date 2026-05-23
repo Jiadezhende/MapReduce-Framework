@@ -138,6 +138,8 @@ Hadoop MapReduce 在 mapper、shuffle、reducer 之间传输 key/value 时，需
 | `companion.stage1.reducers` | Stage1 默认 reducer 数 |
 | `companion.stage2.reducers` | Stage2 默认 reducer 数 |
 | `companion.salt.seed` | salt / 二次切片使用的稳定 seed |
+| `companion.vid_freq.path` | Stage0b 读取 Stage0a 非 singleton vid 集合的路径 |
+| `companion.stage0.snappy.enabled` | Stage0b 是否使用 Snappy block 压缩写 SequenceFile |
 
 新增配置时需要同时更新：
 

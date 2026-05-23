@@ -27,6 +27,30 @@ hdfs:///companion/profile/
 - JSON 供脚本和报告直接读取。
 - CSV 供人工检查、画图或导入表格工具。
 
+当前最小实现为 `profile_csv.py`，可读本地 CSV 或 stdin，输出：
+
+| 文件 | 内容 |
+|---|---|
+| `summary.json` | 总行数、有效行、解析失败率、distinct vid/loc、singleton vid 占比、时间范围 |
+| `top_vid.csv` | 出现次数最高的 vid |
+| `top_loc.csv` | 流量最高的 loc |
+| `top_loc_slot.csv` | 流量最高的 `(loc, slot)` |
+| `day_counts.csv` | UTC 日期粒度记录数 |
+
+示例：
+
+```bash
+python3 tools/profiler/profile_csv.py \
+  --input tests/data/mini.csv \
+  --output-dir /tmp/companion-profile-mini \
+  --top 50
+
+ssh master 'hadoop fs -cat /companion/input/raw/1d.csv' \
+  | python3 tools/profiler/profile_csv.py \
+      --input - \
+      --output-dir /tmp/companion-profile-1d
+```
+
 ## 验收信号
 
 - 能列出 top 热点 `loc` 或 `(loc, slot)`。
