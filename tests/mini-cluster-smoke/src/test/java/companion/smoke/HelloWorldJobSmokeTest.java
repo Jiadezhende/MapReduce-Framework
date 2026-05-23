@@ -14,6 +14,7 @@ import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.util.ToolRunner;
 import org.junit.AfterClass;
+import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -42,6 +43,8 @@ public class HelloWorldJobSmokeTest {
 
     @BeforeClass
     public static void setUp() throws IOException {
+        Assume.assumeFalse("Hadoop LocalJobRunner on Windows requires winutils/HADOOP_HOME",
+                isWindowsWithoutHadoopHome());
         Configuration conf = new Configuration();
         conf.set("fs.defaultFS", "file:///");
         conf.set("mapreduce.framework.name", "local");
@@ -140,5 +143,19 @@ public class HelloWorldJobSmokeTest {
             out.set(s);
             ctx.write(key, out);
         }
+    }
+
+    private static boolean isWindowsWithoutHadoopHome() {
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        if (!osName.contains("win")) {
+            return false;
+        }
+        String hadoopHomeProp = System.getProperty("hadoop.home.dir");
+        String hadoopHomeEnv = System.getenv("HADOOP_HOME");
+        return isBlank(hadoopHomeProp) && isBlank(hadoopHomeEnv);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 }

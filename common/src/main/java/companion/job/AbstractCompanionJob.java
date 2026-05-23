@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
  * Convention for run() args:
  *   $0 = input path
  *   $1 = output path
- *   $2+ = -Dkey=value overrides (forwarded via {@link Configured})
+     *   $2+ = -Dkey=value or -D key=value overrides
  */
 public abstract class AbstractCompanionJob extends Configured implements Tool {
 
@@ -44,6 +44,7 @@ public abstract class AbstractCompanionJob extends Configured implements Tool {
             conf = new Configuration();
         }
         CompanionConf.applyDefaults(conf);
+        applyTrailingDefines(conf, args);
 
         Path in = new Path(args[0]);
         Path out = new Path(args[1]);
@@ -61,4 +62,26 @@ public abstract class AbstractCompanionJob extends Configured implements Tool {
     public static final String COUNTER_GROUP_STAGE1 = "STAGE1";
     public static final String COUNTER_GROUP_STAGE2 = "STAGE2";
     public static final String COUNTER_GROUP_STAGE3 = "STAGE3";
+
+    private static void applyTrailingDefines(Configuration conf, String[] args) {
+        for (int i = 2; i < args.length; i++) {
+            String arg = args[i];
+            if (!arg.startsWith("-D")) {
+                continue;
+            }
+            String define = arg.substring(2).trim();
+            if (define.isEmpty() && i + 1 < args.length) {
+                define = args[++i].trim();
+            }
+            int eq = define.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            String key = define.substring(0, eq).trim();
+            String value = define.substring(eq + 1).trim();
+            if (!key.isEmpty()) {
+                conf.set(key, value);
+            }
+        }
+    }
 }
