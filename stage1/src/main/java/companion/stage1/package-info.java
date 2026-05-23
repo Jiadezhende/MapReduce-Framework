@@ -4,6 +4,6 @@
  * <p>在同一 loc 下按时间滑窗生成车辆对见证（vidA, vidB, loc, slot）。
  * 详细契约见 stage1/README.md。
  *
- * <p>占位包：实现待补。
+ * <p>主入口见 {@link companion.stage1.Stage1Job}。
  */
 package companion.stage1;
