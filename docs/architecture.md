@@ -19,7 +19,7 @@ ${COMPANION_ROOT}/
 └── profile/                          # Long-tail histograms (owner: R2)
 
 /tmp/${USER}/companion/runs/<run_id>/  # Per-run personal workspace (cluster_run.sh)
-├── vid_freq/{phase}/                 # Stage0a output
+├── vid_freq/{phase}/                 # Stage0a BloomFilter SequenceFile output
 ├── filtered/{phase}/                 # Stage0b output (SequenceFile)
 ├── pair_loc_slot/{phase}/            # Stage1 output (SequenceFile)
 ├── companions/{phase}/               # Stage2 output (CSV after threshold)
@@ -48,7 +48,6 @@ All keys live in `common/src/main/resources/companion-conf.xml` and are accessed
 | `companion.stage2.reducers` | 8 (1d) / 32 (7d) / 128 (31d) | R4, R6 |
 | `companion.salt.seed` | 20260514 | R3 (J1a / J1b) |
 | `companion.vid_freq.path` | empty | R2 (Stage0b) |
-| `companion.stage0.snappy.enabled` | true | R2 |
 
 Override on submit with `-D companion.delta.t=600 …`.
 
@@ -82,6 +81,8 @@ R6's `parse_counters.py` is the single consumer; it expects this exact naming.
 | `companion.io.PairKey` | 8 (2 × int) | Stage1 out / Stage2 in/out | Always `vidA < vidB`; `set()` enforces it. |
 | `companion.io.RecordWritable` | 12 (3 × int) | Stage0 out / Stage1 in | Fixed-width SequenceFile value. |
 | `companion.io.LocSlotWritable` | 1–10 (VInt × 2) | Stage1 out / Stage2 in | Variable width — most ids small. |
+
+Stage0a writes `vid_freq/{phase}` as `SequenceFile<NullWritable, org.apache.hadoop.util.bloom.BloomFilter>`. Stage0b consumes those part files through DistributedCache; the BloomFilter must have no false negatives for vids with frequency `>= 2`.
 
 When changing any of the above, bump `companion-parent` minor version and notify all stage owners.
 
