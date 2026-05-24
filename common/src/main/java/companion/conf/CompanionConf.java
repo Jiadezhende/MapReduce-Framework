@@ -18,7 +18,6 @@ public final class CompanionConf {
     public static final int    TOP_N_DEFAULT             = 10_000;
     public static final int    STAGE1_REDUCERS_DEFAULT   = 8;
     public static final int    STAGE2_REDUCERS_DEFAULT   = 8;
-    public static final boolean STAGE0_SNAPPY_ENABLED_DEFAULT = true;
 
     public static final String KEY_T0               = "companion.t0";
     public static final String KEY_DELTA_T          = "companion.delta.t";
@@ -30,8 +29,6 @@ public final class CompanionConf {
     public static final String KEY_STAGE1_REDUCERS  = "companion.stage1.reducers";
     public static final String KEY_STAGE2_REDUCERS  = "companion.stage2.reducers";
     public static final String KEY_SALT_SEED        = "companion.salt.seed";
-    public static final String KEY_VID_FREQ_PATH    = "companion.vid_freq.path";
-    public static final String KEY_STAGE0_SNAPPY_ENABLED = "companion.stage0.snappy.enabled";
 
     /** Load companion-conf.xml from classpath; no-op if already loaded. */
     public static Configuration applyDefaults(Configuration conf) {
@@ -48,10 +45,6 @@ public final class CompanionConf {
     public static int topN(Configuration c)        { return c.getInt(KEY_TOP_N, TOP_N_DEFAULT); }
     public static int stage1Reducers(Configuration c){return c.getInt(KEY_STAGE1_REDUCERS, STAGE1_REDUCERS_DEFAULT); }
     public static int stage2Reducers(Configuration c){return c.getInt(KEY_STAGE2_REDUCERS, STAGE2_REDUCERS_DEFAULT); }
-    public static String vidFreqPath(Configuration c){return c.get(KEY_VID_FREQ_PATH, ""); }
-    public static boolean stage0SnappyEnabled(Configuration c) {
-        return c.getBoolean(KEY_STAGE0_SNAPPY_ENABLED, STAGE0_SNAPPY_ENABLED_DEFAULT);
-    }
 
     private CompanionConf() {}
 }
