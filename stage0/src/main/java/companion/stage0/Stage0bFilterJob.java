@@ -28,12 +28,21 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class Stage0bFilterJob extends AbstractCompanionJob {
+    public static final String KEY_VID_FREQ_PATH = "companion.vid_freq.path";
+    public static final String KEY_STAGE0_SNAPPY_ENABLED = "companion.stage0.snappy.enabled";
+    private static final boolean STAGE0_SNAPPY_ENABLED_DEFAULT = true;
+
+    @Override
+    public int run(String[] args) throws Exception {
+        applyTrailingDefines(getConf(), args);
+        return super.run(args);
+    }
 
     @Override
     protected Job buildJob(Configuration conf, Path in, Path out) throws Exception {
-        String vidFreqPath = CompanionConf.vidFreqPath(conf);
+        String vidFreqPath = vidFreqPath(conf);
         if (vidFreqPath == null || vidFreqPath.trim().isEmpty()) {
-            throw new IllegalArgumentException(CompanionConf.KEY_VID_FREQ_PATH + " is required");
+            throw new IllegalArgumentException(KEY_VID_FREQ_PATH + " is required");
         }
 
         Job job = Job.getInstance(conf, jobName());
@@ -59,7 +68,7 @@ public class Stage0bFilterJob extends AbstractCompanionJob {
         job.setOutputFormatClass(SequenceFileOutputFormat.class);
         TextInputFormat.addInputPath(job, in);
         SequenceFileOutputFormat.setOutputPath(job, out);
-        if (CompanionConf.stage0SnappyEnabled(conf)) {
+        if (stage0SnappyEnabled(conf)) {
             SequenceFileOutputFormat.setCompressOutput(job, true);
             SequenceFileOutputFormat.setOutputCompressionType(job, CompressionType.BLOCK);
             SequenceFileOutputFormat.setOutputCompressorClass(job, SnappyCodec.class);
@@ -90,9 +99,9 @@ public class Stage0bFilterJob extends AbstractCompanionJob {
                 }
             }
             if (keptVids.isEmpty()) {
-                String freqPath = CompanionConf.vidFreqPath(conf);
+                String freqPath = vidFreqPath(conf);
                 if (freqPath == null || freqPath.trim().isEmpty()) {
-                    throw new IOException(CompanionConf.KEY_VID_FREQ_PATH + " is required");
+                    throw new IOException(KEY_VID_FREQ_PATH + " is required");
                 }
                 loadVidPath(conf, new Path(freqPath));
             }
@@ -162,6 +171,39 @@ public class Stage0bFilterJob extends AbstractCompanionJob {
                 }
             }
             return (int) value;
+        }
+    }
+
+    private static String vidFreqPath(Configuration conf) {
+        return conf.get(KEY_VID_FREQ_PATH, "");
+    }
+
+    private static boolean stage0SnappyEnabled(Configuration conf) {
+        return conf.getBoolean(KEY_STAGE0_SNAPPY_ENABLED, STAGE0_SNAPPY_ENABLED_DEFAULT);
+    }
+
+    private static void applyTrailingDefines(Configuration conf, String[] args) {
+        if (conf == null) {
+            return;
+        }
+        for (int i = 2; i < args.length; i++) {
+            String arg = args[i];
+            if (!arg.startsWith("-D")) {
+                continue;
+            }
+            String define = arg.substring(2).trim();
+            if (define.isEmpty() && i + 1 < args.length) {
+                define = args[++i].trim();
+            }
+            int eq = define.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            String key = define.substring(0, eq).trim();
+            String value = define.substring(eq + 1).trim();
+            if (!key.isEmpty()) {
+                conf.set(key, value);
+            }
         }
     }
 }

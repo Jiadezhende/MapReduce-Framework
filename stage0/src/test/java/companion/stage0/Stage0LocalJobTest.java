@@ -1,6 +1,5 @@
 package companion.stage0;
 
-import companion.conf.CompanionConf;
 import companion.io.RecordWritable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -41,7 +40,7 @@ public class Stage0LocalJobTest {
         conf = new Configuration();
         conf.set("fs.defaultFS", "file:///");
         conf.set("mapreduce.framework.name", "local");
-        conf.setBoolean(CompanionConf.KEY_STAGE0_SNAPPY_ENABLED, false);
+        conf.setBoolean(Stage0bFilterJob.KEY_STAGE0_SNAPPY_ENABLED, false);
         fs = FileSystem.get(conf);
         workDir = new Path(System.getProperty("java.io.tmpdir"),
                 "companion-stage0-" + System.nanoTime());
@@ -65,10 +64,9 @@ public class Stage0LocalJobTest {
         assertEquals(0, ToolRunner.run(conf, new Stage0aFreqJob(),
                 new String[]{input.toString(), freq.toString()}));
 
-        Configuration filterConf = new Configuration(conf);
-        filterConf.set(CompanionConf.KEY_VID_FREQ_PATH, freq.toString());
-        assertEquals(0, ToolRunner.run(filterConf, new Stage0bFilterJob(),
-                new String[]{input.toString(), filtered.toString()}));
+        assertEquals(0, ToolRunner.run(new Configuration(conf), new Stage0bFilterJob(),
+                new String[]{input.toString(), filtered.toString(),
+                        "-D", Stage0bFilterJob.KEY_VID_FREQ_PATH + "=" + freq.toString()}));
 
         List<int[]> actual = readRecords(filtered);
         List<int[]> expected = readRecords(new Path(fixture("filtered.seq").toURI()));
