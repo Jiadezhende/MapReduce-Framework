@@ -12,12 +12,20 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
+import org.apache.hadoop.io.SequenceFile.CompressionType;
 import org.apache.hadoop.util.ToolRunner;
+import org.apache.hadoop.util.bloom.BloomFilter;
+import org.apache.hadoop.util.bloom.Key;
 
 import java.io.IOException;
 
 public class Stage0aFreqJob extends AbstractCompanionJob {
+    @Override
+    public int run(String[] args) throws Exception {
+        Stage0Bloom.applyTrailingDefines(getConf(), args);
+        return super.run(args);
+    }
 
     @Override
     protected Job buildJob(Configuration conf, Path in, Path out) throws Exception {
@@ -30,13 +38,15 @@ public class Stage0aFreqJob extends AbstractCompanionJob {
 
         job.setMapOutputKeyClass(IntWritable.class);
         job.setMapOutputValueClass(IntWritable.class);
-        job.setOutputKeyClass(IntWritable.class);
-        job.setOutputValueClass(NullWritable.class);
+        job.setOutputKeyClass(NullWritable.class);
+        job.setOutputValueClass(BloomFilter.class);
 
         job.setInputFormatClass(TextInputFormat.class);
-        job.setOutputFormatClass(TextOutputFormat.class);
+        job.setOutputFormatClass(SequenceFileOutputFormat.class);
         TextInputFormat.addInputPath(job, in);
-        TextOutputFormat.setOutputPath(job, out);
+        SequenceFileOutputFormat.setOutputPath(job, out);
+        SequenceFileOutputFormat.setCompressOutput(job, true);
+        SequenceFileOutputFormat.setOutputCompressionType(job, CompressionType.BLOCK);
         return job;
     }
 
@@ -83,7 +93,16 @@ public class Stage0aFreqJob extends AbstractCompanionJob {
         }
     }
 
-    public static class FreqReducer extends Reducer<IntWritable, IntWritable, IntWritable, NullWritable> {
+    public static class FreqReducer extends Reducer<IntWritable, IntWritable, NullWritable, BloomFilter> {
+        private BloomFilter bloom;
+        private final Key bloomKey = new Key();
+        private final byte[] bloomKeyBytes = new byte[4];
+
+        @Override
+        protected void setup(Context context) {
+            bloom = Stage0Bloom.create(context.getConfiguration());
+        }
+
         @Override
         protected void reduce(IntWritable key, Iterable<IntWritable> values, Context context)
                 throws IOException, InterruptedException {
@@ -92,10 +111,16 @@ public class Stage0aFreqJob extends AbstractCompanionJob {
                 sum += value.get();
             }
             if (sum >= 2) {
-                context.write(key, NullWritable.get());
+                Stage0Bloom.setVid(bloomKey, bloomKeyBytes, key.get());
+                bloom.add(bloomKey);
             } else {
                 context.getCounter(COUNTER_GROUP_STAGE0, Stage0Counters.SINGLETON_VIDS.name()).increment(1);
             }
+        }
+
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            context.write(NullWritable.get(), bloom);
         }
     }
 }

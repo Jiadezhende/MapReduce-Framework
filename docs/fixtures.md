@@ -10,7 +10,7 @@
 
 ## §1 `filtered.seq` — Stage 0 输出 / Stage 1 输入
 
-- 容器：`SequenceFile<NullWritable, RecordWritable>`，Snappy block 压缩。
+- 容器：`SequenceFile<NullWritable, RecordWritable>`，block 压缩；codec 由集群 Hadoop 默认配置决定。
 - 路径：`${COMPANION_ROOT}/filtered/{phase}/part-*`，`{phase} ∈ {1d, 7d, 31d}`。
 - Key：`NullWritable`，零字节，不参与排序。
 - Value：[`RecordWritable`](../common/src/main/java/companion/io/RecordWritable.java) 定长 12 字节。
