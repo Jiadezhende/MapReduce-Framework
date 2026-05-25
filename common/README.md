@@ -134,6 +134,7 @@ Hadoop MapReduce 在 mapper、shuffle、reducer 之间传输 key/value 时，需
 | `companion.slot.size` | 时间桶宽度，默认 300 秒 |
 | `companion.loc.skew.cap` | Stage1 单个热点桶的保护上限 |
 | `companion.pair.salt.n` | Stage2 pair salt 桶数 |
+| `companion.hll.threshold` | Stage2 单个 pair 切换到 HLL 估算的 distinct witness 阈值 |
 | `companion.top.n` | Stage3 TopN 输出行数 |
 | `companion.stage1.reducers` | Stage1 默认 reducer 数 |
 | `companion.stage2.reducers` | Stage2 默认 reducer 数 |
