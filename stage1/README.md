@@ -32,8 +32,8 @@ Stage 1 不负责最终计数，也不负责过滤 `count < k.min`。这些由 S
 
 | 类型 | 路径 | 格式 |
 |---|---|---|
-| 输入 | `hdfs:///companion/filtered/{phase}/` | `SequenceFile<NullWritable, RecordWritable>` |
-| 输出 | `hdfs:///companion/pair_loc_slot/{phase}/part-*` | `SequenceFile<PairKey, LocSlotWritable>` |
+| 输入 | `/companion/runs/<run_id>/filtered/{phase}/` | `SequenceFile<NullWritable, RecordWritable>` |
+| 输出 | `/companion/runs/<run_id>/pair_loc_slot/{phase}/part-*` | `SequenceFile<PairKey, LocSlotWritable>` |
 
 输出使用 Snappy block 压缩。
 

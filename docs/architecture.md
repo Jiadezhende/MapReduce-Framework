@@ -4,10 +4,11 @@ This document is the contract between modules. R1 maintains it; every change req
 
 ## 1. HDFS layout
 
-Two trees:
+One tree under `${COMPANION_ROOT}` (default `/companion`), with four kinds of subtree:
 
-1. **Shared, read-only** under `${COMPANION_ROOT}` (default `/companion`). Only data maintainers and the integration owner write here.
-2. **Per-run, per-user** under `/tmp/${USER}/companion/runs/<run_id>/`. Every `scripts/cluster_run.sh` invocation creates a fresh `run_id` so concurrent developers do not collide.
+1. **Shared, read-only** (`input/`, `profile/`, `snapshots/`) — only data maintainers and the integration owner write here.
+2. **Per-run** under `runs/<run_id>/` — every `scripts/cluster_run.sh` invocation creates a fresh `run_id`; runs are isolated by `run_id` (no per-user segment), so concurrent runs do not collide.
+3. **Isolation tests** under `test/<stage>-<ts>/` — `scripts/cluster_test.sh` single-stage runs, kept apart from prod data and torn down by default.
 
 ```
 ${COMPANION_ROOT}/
@@ -16,18 +17,23 @@ ${COMPANION_ROOT}/
 │   ├── filtered/{phase}/
 │   ├── pair_loc_slot/{phase}/
 │   └── companions/{phase}/
-└── profile/                          # Long-tail histograms (owner: R2)
-
-/tmp/${USER}/companion/runs/<run_id>/  # Per-run personal workspace (cluster_run.sh)
-├── vid_freq/{phase}/                 # Stage0a BloomFilter SequenceFile output
-├── filtered/{phase}/                 # Stage0b output (SequenceFile)
-├── pair_loc_slot/{phase}/            # Stage1 output (SequenceFile)
-├── companions/{phase}/               # Stage2 output (CSV after threshold)
-└── final/{phase}/                    # Stage3 output (sorted CSV + TopN + metrics)
-    ├── companions.csv
-    ├── top_n.csv
-    └── _metrics.json
+├── profile/                          # Long-tail histograms (owner: R2)
+├── runs/<run_id>/                    # Per-run prod workspace (cluster_run.sh)
+│   ├── vid_freq/{phase}/             # Stage0a BloomFilter SequenceFile output
+│   ├── filtered/{phase}/             # Stage0b output (SequenceFile)
+│   ├── pair_loc_slot/{phase}/        # Stage1 output (SequenceFile)
+│   ├── companions/{phase}/           # Stage2 output (CSV after threshold)
+│   └── final/{phase}/                # Stage3 output (sorted CSV + TopN + metrics)
+│       ├── companions.csv
+│       ├── top_n.csv
+│       └── _metrics.json
+└── test/<stage>-<ts>/                # Single-stage isolation tests (cluster_test.sh)
+    ├── in/
+    ├── vid_freq/                     # stage0 only
+    └── out/
 ```
+
+`run_id = ${USER}-${git_sha}-${ts}` (the user is part of the id for traceability, not a path segment). A run is resumable: each stage is skipped when its output already carries a Hadoop `_SUCCESS` marker, so re-running with the same `--run-id` continues from the breakpoint.
 
 `{phase} ∈ {1d, 7d, 31d}` tags the dataset scale; the same pipeline runs at three scales. Stage0 reads `${COMPANION_ROOT}/input/raw/${phase}.csv` directly — v1 does not depend on a pre-sliced `input/{phase}/` directory.
 
@@ -48,6 +54,7 @@ All keys live in `common/src/main/resources/companion-conf.xml` and are accessed
 | `companion.stage2.reducers` | 8 (1d) / 32 (7d) / 128 (31d) | R4, R6 |
 | `companion.salt.seed` | 20260514 | R3 (J1a / J1b) |
 | `companion.vid_freq.path` | empty | R2 (Stage0b) |
+| `companion.run.tag` | empty | infra (cluster_run.sh) |
 
 Override on submit with `-D companion.delta.t=600 …`.
 
@@ -97,6 +104,10 @@ hadoop jar <stageX-jar> <fully-qualified-job-class> \
 ```
 
 The first two positional args are input/output; everything else is config override.
+
+Each stage jar is a **shaded fat jar**: `maven-shade-plugin` bundles `companion:common` (custom Writables, `CompanionConf`, `AbstractCompanionJob`) into it, while `hadoop-client` stays `provided` (supplied by the cluster). Submission therefore needs no `-libjars` and no extra `HADOOP_CLASSPATH` — test and prod submit identically.
+
+`scripts/cluster_run.sh` additionally passes `-D companion.run.tag=<run_id>`; `AbstractCompanionJob` folds it into the YARN job name (`<JobName> [<run_id>]`) so a run's apps can be located and killed (`scripts/cluster_cancel.sh`, or Ctrl-C, which the launcher traps).
 
 ## 6. Dependencies between modules
 

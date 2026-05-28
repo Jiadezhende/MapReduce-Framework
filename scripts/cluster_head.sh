@@ -22,5 +22,5 @@ subdir="$2"
 phase="$3"
 n="${4:-50}"
 
-target="${HDFS_RUN_ROOT_BASE}/${run_id}/${subdir}/${phase}"
+target="${HDFS_RUNS_ROOT}/${run_id}/${subdir}/${phase}"
 ssh "${MASTER_HOST}" "${HADOOP_BIN} fs -cat ${target}/part-* | head -${n}"

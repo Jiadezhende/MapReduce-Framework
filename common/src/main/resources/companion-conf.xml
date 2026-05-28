@@ -67,4 +67,10 @@
         <description>Seed for J1 salt slicing. Change to run J1b with a second seed and merge results to recover skew loss.</description>
     </property>
 
+    <property>
+        <name>companion.run.tag</name>
+        <value></value>
+        <description>Run identifier folded into the YARN job name (e.g. the cluster_run.sh run_id) so a run's apps can be located and killed. Empty = no tag.</description>
+    </property>
+
 </configuration>

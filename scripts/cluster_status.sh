@@ -15,4 +15,4 @@ if [[ $# -ne 1 ]]; then
 fi
 
 run_id="$1"
-ssh "${MASTER_HOST}" "${HADOOP_BIN} fs -ls -R -h ${HDFS_RUN_ROOT_BASE}/${run_id}"
+ssh "${MASTER_HOST}" "${HADOOP_BIN} fs -ls -R -h ${HDFS_RUNS_ROOT}/${run_id}"
