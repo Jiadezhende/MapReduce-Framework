@@ -33,3 +33,4 @@ tests/data/fixtures/.*.crc
 # Logs
 *.log
 logs/
+tmp_stage3_in/
