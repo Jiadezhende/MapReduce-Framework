@@ -108,6 +108,35 @@ done'
 
 ---
 
+## §5 本机 dry-run 报错 `declare: -A: invalid option`——macOS 自带 bash 3.2
+
+**现象**:在本机(Mac)跑 `scripts/cluster_run.sh --days 1 --dry-run` 直接失败:
+```
+scripts/cluster_run.sh: line 139: declare: -A: invalid option
+```
+同一脚本在 WSL / Linux 上正常。
+
+**根因**:`declare -A`(关联数组)是 **bash 4.0+** 才有的特性,而 **macOS 自带的 `/bin/bash` 永远停在 3.2.57**(Apple 因 bash 4 改用 GPLv3 而不再升级)。脚本首行虽是 `#!/usr/bin/env bash`,但本机 PATH 里的 `bash` 就是这只 3.2,于是 `declare -A` 当场报错。这是**改动前就存在的依赖**,不是新引入的 bug;WSL 的 bash 是 4+,所以一直没暴露。
+
+**修复**:`scripts/cluster_run.sh` 里 `declare -A MODULE_JAR` 是全 `scripts/` 目录**唯一**的 bash-4 写法,且该关联数组只在紧随其后的 scp 循环里被读一次。于是删掉关联数组,把"模块→jar 路径"的解析直接内联进 scp 循环按需求值:
+```bash
+for module in "${NEEDED_MODULES[@]}"; do
+    if [[ "${DRY_RUN}" == "true" ]] && ! ls .../target/${module}-*.jar >/dev/null 2>&1; then
+        local_jar=".../target/${module}-<version>.jar"
+    else
+        local_jar=$(companion_jar "${module}")
+    fi
+    run scp "${local_jar}" "${MASTER_HOST}:${REMOTE_JAR_DIR}/${module}.jar"
+done
+```
+行为与原来完全一致,只是不再需要关联数组。其余写法(`declare -a` 索引数组、`[[ ]]`、`(( ))`、`${arr[@]}`)在 bash 3.2 与 4+ 都支持。
+
+**验证**:`/bin/bash -n`(语法)通过;`/bin/bash scripts/cluster_run.sh --days 1 --dry-run` 在本机 3.2.57 上完整跑出 stage0→stage3 的提交计划。WSL 的 bash 4+ 是超集,继续可用。
+
+> 经验:**写集群脚本要兼顾 macOS,就别用 bash-4-only 特性**(`declare -A`、`${var,,}`/`${var^^}`、`mapfile`/`readarray`、`wait -n`、`&>>` 等)。排查这类"换台机器就崩"的脚本问题,第一步先 `bash --version` 看清本机到底是哪只 bash。
+
+---
+
 ## 附:尚未处理
 
 - **日志聚合未开**(`yarn.log-aggregation-enable`):容器退出后无法在 Web UI 看 task 的 stderr/stdout。开启需改 `yarn-site.xml` 并同步到所有 worker + 重启 NodeManager(对共享集群有干扰),建议挑空闲窗口做。
