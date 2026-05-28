@@ -25,8 +25,8 @@ Stage 0 需要完成三件事：
 | 类型 | 路径 | 格式 |
 |---|---|---|
 | 输入 | `${COMPANION_ROOT}/input/raw/{phase}.csv` | 文本行 `vid,loc,ts` |
-| 中间结果 | `/tmp/${USER}/companion/runs/<run_id>/vid_freq/{phase}` | `SequenceFile<NullWritable, BloomFilter>` |
-| 输出 | `/tmp/${USER}/companion/runs/<run_id>/filtered/{phase}/part-*` | `SequenceFile<NullWritable, RecordWritable>` |
+| 中间结果 | `/companion/runs/<run_id>/vid_freq/{phase}` | `SequenceFile<NullWritable, BloomFilter>` |
+| 输出 | `/companion/runs/<run_id>/filtered/{phase}/part-*` | `SequenceFile<NullWritable, RecordWritable>` |
 
 `{phase}` 取值为 `1d`、`7d`、`31d`。
 

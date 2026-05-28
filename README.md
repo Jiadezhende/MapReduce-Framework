@@ -35,14 +35,14 @@ CSV
 
 ```text
 /companion/input/raw/{1d,7d,31d}.csv              # 共享只读，由数据维护者上传
-  -> /tmp/$USER/companion/runs/<run_id>/vid_freq/{phase}
-  -> /tmp/$USER/companion/runs/<run_id>/filtered/{phase}
-  -> /tmp/$USER/companion/runs/<run_id>/pair_loc_slot/{phase}
-  -> /tmp/$USER/companion/runs/<run_id>/companions/{phase}
-  -> /tmp/$USER/companion/runs/<run_id>/final/{phase}
+  -> /companion/runs/<run_id>/vid_freq/{phase}
+  -> /companion/runs/<run_id>/filtered/{phase}
+  -> /companion/runs/<run_id>/pair_loc_slot/{phase}
+  -> /companion/runs/<run_id>/companions/{phase}
+  -> /companion/runs/<run_id>/final/{phase}
 ```
 
-`{phase}` 表示数据规模，取值为 `1d`、`7d`、`31d`。开发时先跑 1 天数据验证正确性，再扩到 7 天和 31 天。每次提交生成独立 `run_id`，所有中间产物落到个人 run root，多人并行互不覆盖。
+`{phase}` 表示数据规模，取值为 `1d`、`7d`、`31d`。开发时先跑 1 天数据验证正确性，再扩到 7 天和 31 天。每次提交生成独立 `run_id`，所有中间产物落到 `runs/<run_id>/`，靠 run_id 隔离，多人并行互不覆盖。
 
 ## 目录结构
 
@@ -103,7 +103,7 @@ scripts/cluster_run.sh --days 1 --run-id <run_id> --from stage2 --until stage3
 默认输出位于：
 
 ```text
-/tmp/$USER/companion/runs/<run_id>/final/{phase}/
+/companion/runs/<run_id>/final/{phase}/
 ```
 
 主要文件：
