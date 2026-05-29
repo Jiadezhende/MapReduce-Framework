@@ -7,7 +7,7 @@
 # `hadoop fs -text`/`-cat`, and diff. This catches what LocalJobRunner cannot:
 # multi-reducer partitioning, jar packaging / classpath, HDFS committer.
 #
-# Everything lands under /tmp/${USER}/... so concurrent users never collide.
+# Everything lands under /companion/test/<stage>-<ts>/ so runs never collide.
 #
 # Usage:
 #   scripts/cluster_test.sh --stage {stage0|stage1|stage2|stage3}
@@ -58,12 +58,11 @@ case "${STAGE}" in
 esac
 
 TS=$(date +%Y%m%d%H%M%S)
-HDFS_TEST_ROOT="${HDFS_RUN_ROOT_BASE}/clustertest/${STAGE}-${TS}"
-REMOTE_SUBMIT_DIR="${REMOTE_SUBMIT_BASE}/clustertest-${STAGE}-${TS}"
+HDFS_TEST_ROOT="${HDFS_TEST_ROOT_BASE}/${STAGE}-${TS}"
+REMOTE_SUBMIT_DIR="${REMOTE_SUBMIT_BASE}/test-${STAGE}-${TS}"
 REMOTE_JAR_DIR="${REMOTE_SUBMIT_DIR}/jars"
 REMOTE_GOLDEN="${REMOTE_SUBMIT_DIR}/golden/${GOLDEN}"
 REMOTE_STAGE_JAR="${REMOTE_JAR_DIR}/${MODULE}.jar"
-REMOTE_COMMON_JAR="${REMOTE_JAR_DIR}/common.jar"
 
 # local temp files; emptied here so the EXIT trap can reference them safely
 INPUT_TMP=""
@@ -108,7 +107,7 @@ if [[ "${DO_BUILD}" == "true" ]]; then
     run "mvn" -B -f "${LOCAL_DATA_DIR}/pom.xml" -DskipTests package
 fi
 
-# 2. Resolve jars (stage job + common for the custom Writables)
+# 2. Resolve the shaded stage jar (fat: bundles common's custom Writables)
 resolve_jar() {
     if [[ "${DRY_RUN}" == "true" ]] && ! ls "${LOCAL_DATA_DIR}/$1/target/$1-"*.jar >/dev/null 2>&1; then
         echo "${LOCAL_DATA_DIR}/$1/target/$1-<version>.jar"
@@ -117,7 +116,6 @@ resolve_jar() {
     fi
 }
 LOCAL_STAGE_JAR=$(resolve_jar "${MODULE}")
-LOCAL_COMMON_JAR=$(resolve_jar "common")
 
 # 3. Prepare local input fixture for this stage
 case "${STAGE}" in
@@ -134,17 +132,16 @@ case "${STAGE}" in
 esac
 LOCAL_GOLDEN="${FIXTURES}/${GOLDEN}"
 
-# 4. Stage jars + input + golden on master, then push input into isolated HDFS path
+# 4. Stage jar + input + golden on master, then push input into isolated HDFS path
 run ssh "${MASTER_HOST}" "mkdir -p ${REMOTE_JAR_DIR} ${REMOTE_SUBMIT_DIR}/golden ${REMOTE_SUBMIT_DIR}/in"
 run scp "${LOCAL_STAGE_JAR}"  "${MASTER_HOST}:${REMOTE_STAGE_JAR}"
-run scp "${LOCAL_COMMON_JAR}" "${MASTER_HOST}:${REMOTE_COMMON_JAR}"
 run scp "${LOCAL_GOLDEN}"     "${MASTER_HOST}:${REMOTE_GOLDEN}"
 run scp "${LOCAL_INPUT}"      "${MASTER_HOST}:${REMOTE_SUBMIT_DIR}/in/${INPUT_NAME}"
 run ssh "${MASTER_HOST}" \
     "${HADOOP_BIN} fs -mkdir -p ${HDFS_TEST_ROOT}/in && ${HADOOP_BIN} fs -put -f ${REMOTE_SUBMIT_DIR}/in/${INPUT_NAME} ${HDFS_TEST_ROOT}/in/${INPUT_NAME}"
 
-# 5. Submit the stage. common.jar goes on the client classpath (HADOOP_CLASSPATH)
-#    and is shipped to tasks via -libjars, since the stage jar is thin.
+# 5. Submit the stage. The shaded stage jar carries common's custom Writables,
+#    so submission matches prod exactly: no -libjars, no extra classpath.
 submit() {
     local jobclass="$1"; shift
     local in="$1"; shift
@@ -152,7 +149,7 @@ submit() {
     local extra=""
     if (( ${#EXTRA_CONF[@]} > 0 )); then extra=" ${EXTRA_CONF[*]}"; fi
     run ssh "${MASTER_HOST}" \
-        "HADOOP_CLASSPATH=${REMOTE_COMMON_JAR} ${HADOOP_BIN} jar ${REMOTE_STAGE_JAR} ${jobclass} -libjars ${REMOTE_COMMON_JAR} ${in} ${out} $*${extra}"
+        "${HADOOP_BIN} jar ${REMOTE_STAGE_JAR} ${jobclass} ${in} ${out} $*${extra}"
 }
 
 RED_CONF="-D mapreduce.job.reduces=${REDUCERS}"
@@ -180,7 +177,8 @@ esac
 decode() {  # <hdfs-or-file-path> -> remote command emitting canonical lines
     local path="$1"
     if [[ "${DECODE}" == "text" ]]; then
-        echo "HADOOP_CLASSPATH=${REMOTE_COMMON_JAR} ${HADOOP_BIN} fs -text ${path}"
+        # fs -text needs the custom Writable classes; the shaded stage jar has them.
+        echo "HADOOP_CLASSPATH=${REMOTE_STAGE_JAR} ${HADOOP_BIN} fs -text ${path}"
     else
         echo "${HADOOP_BIN} fs -cat ${path}"
     fi

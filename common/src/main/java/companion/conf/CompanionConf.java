@@ -19,6 +19,7 @@ public final class CompanionConf {
     public static final int    TOP_N_DEFAULT             = 10_000;
     public static final int    STAGE1_REDUCERS_DEFAULT   = 8;
     public static final int    STAGE2_REDUCERS_DEFAULT   = 8;
+    public static final String RUN_TAG_DEFAULT           = "";
 
     public static final String KEY_T0               = "companion.t0";
     public static final String KEY_DELTA_T          = "companion.delta.t";
@@ -31,6 +32,7 @@ public final class CompanionConf {
     public static final String KEY_STAGE1_REDUCERS  = "companion.stage1.reducers";
     public static final String KEY_STAGE2_REDUCERS  = "companion.stage2.reducers";
     public static final String KEY_SALT_SEED        = "companion.salt.seed";
+    public static final String KEY_RUN_TAG          = "companion.run.tag";
     public static final String KEY_HISTORY_PATH     = "companion.history.path";
 
     /** Load companion-conf.xml from classpath; no-op if already loaded. */
@@ -49,6 +51,7 @@ public final class CompanionConf {
     public static int topN(Configuration c)        { return c.getInt(KEY_TOP_N, TOP_N_DEFAULT); }
     public static int stage1Reducers(Configuration c){return c.getInt(KEY_STAGE1_REDUCERS, STAGE1_REDUCERS_DEFAULT); }
     public static int stage2Reducers(Configuration c){return c.getInt(KEY_STAGE2_REDUCERS, STAGE2_REDUCERS_DEFAULT); }
+    public static String runTag(Configuration c)   { return c.get(KEY_RUN_TAG, RUN_TAG_DEFAULT); }
     public static String historyPath(Configuration c) { return c.get(KEY_HISTORY_PATH, null); }
 
     private CompanionConf() {}

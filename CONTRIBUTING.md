@@ -78,10 +78,10 @@
 ### 规范
 
 - 开发者只在本地写代码、跑单测、打包。
-- master 不作为开发机，不放项目源码，不放项目脚本；只在 `/tmp/$USER/companion-submit/<run_id>/jars/` 临时承载本次提交的 jar。
+- master 不作为开发机，不放项目源码，不放项目脚本；只在 `/tmp/companion/submit/<run_id>/jars/` 临时承载本次提交的 jar。
 - 所有集群任务由本地 `scripts/cluster_run.sh` 非登录式提交，不要手动 `ssh` 进 master 跑 `hadoop jar`。
 - 共享输入 `/companion/input/raw/{1d,7d,31d}.csv` 只读，只有数据维护者能更新。
-- 个人测试输出必须写入 `/tmp/$USER/companion/runs/<run_id>/`，禁止写入 `/companion/{filtered,pair_loc_slot,companions,final}/`。
+- 正式运行输出写入 `/companion/runs/<run_id>/`，隔离测试输出写入 `/companion/test/<stage>-<ts>/`；禁止直接写入共享只读子树 `/companion/{input,profile,snapshots}/`。
 - 每次提交生成独立 `run_id`，不覆盖别人的结果，也不覆盖自己的旧结果。
 - 1d 通过后才能跑 7d；31d 由集成负责人统一跑。
 - `fetch_dataset.sh` 只用于本地 baseline/debug，不用于常规集群 E2E。

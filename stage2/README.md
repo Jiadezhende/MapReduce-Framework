@@ -32,9 +32,9 @@ vidA,vidB,count
 
 | 类型 | 路径 | 格式 |
 |---|---|---|
-| 输入 | `hdfs:///companion/pair_loc_slot/{phase}/` | `SequenceFile<PairKey, LocSlotWritable>` |
-| 主输出 | `hdfs:///companion/companions/{phase}/part-*` | 文本 `vidA,vidB,count` |
-| 副输出 | `hdfs:///companion/companions/{phase}/_hll_pairs/` | 使用 HLL 估算的 pair 列表 |
+| 输入 | `/companion/runs/<run_id>/pair_loc_slot/{phase}/` | `SequenceFile<PairKey, LocSlotWritable>` |
+| 主输出 | `/companion/runs/<run_id>/companions/{phase}/part-*` | 文本 `vidA,vidB,count` |
+| 副输出 | `/companion/runs/<run_id>/companions/{phase}/_hll_pairs/` | 使用 HLL 估算的 pair 列表 |
 
 主输出 schema 是 Stage 3 和 baseline diff 的契约，字段顺序和分隔符不能改。
 

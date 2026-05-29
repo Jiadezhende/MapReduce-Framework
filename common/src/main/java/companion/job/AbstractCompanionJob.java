@@ -50,7 +50,8 @@ public abstract class AbstractCompanionJob extends Configured implements Tool {
 
         log.info("Submitting {}: in={} out={}", jobName(), in, out);
         Job job = buildJob(conf, in, out);
-        job.setJobName(jobName());
+        String tag = CompanionConf.runTag(conf);
+        job.setJobName(tag.isEmpty() ? jobName() : jobName() + " [" + tag + "]");
 
         boolean ok = job.waitForCompletion(true);
         return ok ? 0 : 1;

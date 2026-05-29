@@ -26,11 +26,11 @@ Stage 3 需要输出三类交付物：
 
 | 类型 | 路径 | 格式 |
 |---|---|---|
-| 输入 | `hdfs:///companion/companions/{phase}/` | 文本 `vidA,vidB,count` |
-| 输入 | `hdfs:///companion/companions/{phase}/_hll_pairs/` | Stage 2 HLL pair 副输出 |
-| 输出 | `hdfs:///companion/final/{phase}/companions.csv/part-*` | 全局按 `count` 降序有序 |
-| 输出 | `hdfs:///companion/final/{phase}/top_n.csv` | TopN 单文件 |
-| 输出 | `hdfs:///companion/final/{phase}/_metrics.json` | JSON 指标 |
+| 输入 | `/companion/runs/<run_id>/companions/{phase}/` | 文本 `vidA,vidB,count` |
+| 输入 | `/companion/runs/<run_id>/companions/{phase}/_hll_pairs/` | Stage 2 HLL pair 副输出 |
+| 输出 | `/companion/runs/<run_id>/final/{phase}/companions.csv/part-*` | 全局按 `count` 降序有序 |
+| 输出 | `/companion/runs/<run_id>/final/{phase}/top_n.csv` | TopN 单文件 |
+| 输出 | `/companion/runs/<run_id>/final/{phase}/_metrics.json` | JSON 指标 |
 
 ## 推荐实现流程
 
@@ -98,7 +98,7 @@ Counter 组名固定为 `STAGE3`。
 ## 性能要求
 
 - `InputSampler` 推荐参数：`RandomSampler(freq=0.001, numSamples=10000, maxSplitsSampled=10)`。
-- 分区文件写到 `hdfs:///companion/_stage3/_partition.lst`。
+- 分区文件写到 run 根目录下，如 `/companion/runs/<run_id>/_stage3/_partition.lst`，避免跨 run 冲突。
 - 降序排序推荐使用 `-count` 作为 key，避免自定义反向 comparator。
 - 若 Stage 2 输出超过 10 GB，应在 Stage 2 端启用文件级 Snappy 压缩，Stage 3 自动解压读取。
 - `MetricsWriter` 用脚本或 Java main 实现，不需要写成 MapReduce Job。
