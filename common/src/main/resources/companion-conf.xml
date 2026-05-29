@@ -44,6 +44,12 @@
     </property>
 
     <property>
+        <name>companion.hll.threshold</name>
+        <value>1000000</value>
+        <description>Distinct witness count above which Stage 2 switches a pair from exact HashSet counting to HyperLogLog estimation.</description>
+    </property>
+
+    <property>
         <name>companion.top.n</name>
         <value>10000</value>
         <description>How many top pairs (by count) to emit in Stage 3 alongside the full result.</description>

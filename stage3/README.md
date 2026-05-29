@@ -38,13 +38,12 @@ Stage 3 需要输出三类交付物：
 Stage3SortJob
   使用 InputSampler 抽样 count
   使用 TotalOrderPartitioner 生成全局有序的多 part 输出
-  mapper 把 count 转成 -count 作为 key
-  reducer identity 输出时把 count 转回正数
+  mapper 构建排序 key：(count desc, vidA asc, vidB asc)
+  reducer identity 输出原始行
 
 TopNJob
-  优先读取排序结果的 part-00000
-  取前 companion.top.n 行
-  如果 part-00000 不足 N 行，再继续读后续 part
+  单 reducer 读取排序结果
+  按 (count desc, vidA asc, vidB asc) 输出前 companion.top.n 行
   最终强制输出一个文件
 
 MetricsWriter
@@ -70,7 +69,6 @@ Sort Job 不能为了全局排序退化成 1 个 reducer。TopN 可以使用单 
     "100-999": 4000,
     "1000+": 567
   },
-  "hot_locs": [{"loc": 42, "pair_contribution": 0.18}],
   "hll_pair_count": 123,
   "counters": {"STAGE0.RAW_RECORDS": 270000000},
   "wall_clock_ms": {"stage0": 123456, "stage1": 234567}
@@ -78,8 +76,6 @@ Sort Job 不能为了全局排序退化成 1 个 reducer。TopN 可以使用单 
 ```
 
 `count_histogram` 桶固定为：`3`、`4`、`5-9`、`10-99`、`100-999`、`1000+`。
-
-`hot_locs` 的数据来源需要在实现前和 bench 对齐。候选来源包括 Stage 1 副输出或 bench 侧单独统计，但 Stage 3 不能重新扫描 Stage 0 或 Stage 1 的主输出做临时统计。
 
 ## 必须保持的契约
 
