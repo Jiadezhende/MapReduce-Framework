@@ -43,6 +43,7 @@ All keys live in `common/src/main/resources/companion-conf.xml` and are accessed
 | `companion.slot.size` | 300 | R3 |
 | `companion.loc.skew.cap` | 200000 | R3 |
 | `companion.pair.salt.n` | 16 | R4 |
+| `companion.hll.threshold` | 1000000 | R4 |
 | `companion.top.n` | 10000 | R5 |
 | `companion.stage1.reducers` | 8 (1d) / 32 (7d) / 128 (31d) | R3, R6 |
 | `companion.stage2.reducers` | 8 (1d) / 32 (7d) / 128 (31d) | R4, R6 |
