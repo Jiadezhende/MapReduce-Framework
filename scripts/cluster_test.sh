@@ -193,7 +193,11 @@ post() {  # comparison normalizer for the captured lines
     esac
 }
 
-OUT_CMD="$(decode "${HDFS_TEST_ROOT}/out/part-*") | $(post)"
+if [[ -n "${OUT_SUBDIR:-}" ]]; then
+    OUT_CMD="$(decode "${HDFS_TEST_ROOT}/out/${OUT_SUBDIR}/part-*") | $(post)"
+else
+    OUT_CMD="$(decode "${HDFS_TEST_ROOT}/out/part-*") | $(post)"
+fi
 GOLDEN_CMD="$(decode "file://${REMOTE_GOLDEN}") | $(post)"
 
 echo
