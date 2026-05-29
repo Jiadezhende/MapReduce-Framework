@@ -29,6 +29,7 @@ public final class CompanionConf {
     public static final String KEY_STAGE1_REDUCERS  = "companion.stage1.reducers";
     public static final String KEY_STAGE2_REDUCERS  = "companion.stage2.reducers";
     public static final String KEY_SALT_SEED        = "companion.salt.seed";
+    public static final String KEY_HISTORY_PATH     = "companion.history.path";
 
     /** Load companion-conf.xml from classpath; no-op if already loaded. */
     public static Configuration applyDefaults(Configuration conf) {
@@ -45,6 +46,7 @@ public final class CompanionConf {
     public static int topN(Configuration c)        { return c.getInt(KEY_TOP_N, TOP_N_DEFAULT); }
     public static int stage1Reducers(Configuration c){return c.getInt(KEY_STAGE1_REDUCERS, STAGE1_REDUCERS_DEFAULT); }
     public static int stage2Reducers(Configuration c){return c.getInt(KEY_STAGE2_REDUCERS, STAGE2_REDUCERS_DEFAULT); }
+    public static String historyPath(Configuration c) { return c.get(KEY_HISTORY_PATH, null); }
 
     private CompanionConf() {}
 }

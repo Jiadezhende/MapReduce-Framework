@@ -51,8 +51,8 @@ STAGE0_LINES=10000
 case "${STAGE}" in
     stage0) MODULE=stage0; GOLDEN="filtered.seq";       DECODE=text; COMPARE=multiset ;;
     stage1) MODULE=stage1; GOLDEN="pair_loc_slot.seq";  DECODE=text; COMPARE=set ;;
-    stage2) MODULE=stage2; GOLDEN="companions.csv";     DECODE=cat;  COMPARE=set ;;
-    stage3) MODULE=stage3; GOLDEN="companions.csv";     DECODE=cat;  COMPARE=ordered ;;
+    stage2) MODULE=stage2; GOLDEN="companions.csv";     DECODE=cat;  COMPARE=set; OUT_SUBDIR="" ;;
+    stage3) MODULE=stage3; GOLDEN="companions.csv";     DECODE=cat;  COMPARE=ordered; OUT_SUBDIR="companions.csv" ;;
     "")     echo "ERROR: --stage is required" >&2; usage; exit 2 ;;
     *)      echo "ERROR: invalid --stage '${STAGE}' (expect stage0|stage1|stage2|stage3)" >&2; exit 2 ;;
 esac
@@ -193,7 +193,11 @@ post() {  # comparison normalizer for the captured lines
     esac
 }
 
-OUT_CMD="$(decode "${HDFS_TEST_ROOT}/out/part-*") | $(post)"
+if [[ -n "${OUT_SUBDIR:-}" ]]; then
+    OUT_CMD="$(decode "${HDFS_TEST_ROOT}/out/${OUT_SUBDIR}/part-*") | $(post)"
+else
+    OUT_CMD="$(decode "${HDFS_TEST_ROOT}/out/part-*") | $(post)"
+fi
 GOLDEN_CMD="$(decode "file://${REMOTE_GOLDEN}") | $(post)"
 
 echo
