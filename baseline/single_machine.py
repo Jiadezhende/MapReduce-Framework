@@ -25,8 +25,8 @@ def parse_args():
     parser.add_argument("--input", required=True, help="input CSV: vid,loc,ts")
     parser.add_argument("--output", required=True, help="output CSV: vidA,vidB,count")
     parser.add_argument("--config", default="common/src/main/resources/companion-conf.xml")
-    parser.add_argument("--mirror-stage1-limits", action="store_true",
-                        help="When set, mirror Stage1 limits: partition by slot/2 and apply loc_skew.cap dropping")
+    parser.add_argument("--mirror-stage1-limits", action="store_true", default=True,
+                        help="When set (default), mirror Stage1 limits: partition by slot/2 and apply loc_skew.cap dropping")
     parser.add_argument("--t0", type=int)
     parser.add_argument("--delta-t", type=int)
     parser.add_argument("--k-min", type=int)
@@ -114,9 +114,7 @@ def main():
         names=["vid", "loc", "ts"],
         dtype={"vid": "int64", "loc": "int64", "ts": "int64"}
     )
-    # Mirror FixtureGenerator: limit to first 10k lines when mirroring Stage1
-    if mirror_limits:
-        read_kwargs["nrows"] = 10000
+    # Do not impose nrows limit here; users may run on full input even when mirroring
     df = pd.read_csv(args.input, **read_kwargs)
 
     counts = df["vid"].value_counts()
