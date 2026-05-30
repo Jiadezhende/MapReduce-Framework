@@ -6,6 +6,8 @@
 
 **范围**：只规范应用层 `(key, value)` 字节布局与文本行格式。SequenceFile 容器头、sync marker、压缩块边界由 Hadoop 自行处理，不在本文档范畴；跨 stage diff 在解压、剥离容器层之后做应用层比较。
 
+**算法语义规范**（"每个 stage 输出哪些行"，区别于"每行长什么样"）见 [docs/reference-semantics.md](reference-semantics.md)；`FixtureGenerator` 与 baseline 都以那份文档为对齐基准。
+
 ---
 
 ## §1 `filtered.seq` — Stage 0 输出 / Stage 1 输入

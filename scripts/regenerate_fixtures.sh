@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Regenerate canonical golden fixtures under tests/data/fixtures/ from tests/data/mini.csv.
 # Runs a single-process reference implementation of Stage 0/1/2 (companion.io.FixtureGenerator).
+# Stage 1 here is the IDEAL semantics (group by loc only, no boundary loss); see
+# docs/reference-semantics.md for the spec both this generator and baseline/single_machine.py
+# implement against.
 #
 # Re-run after:
 #   - changing byte layout of RecordWritable / PairKey / LocSlotWritable
-#   - changing Stage 0/1/2 semantics declared in docs/fixtures.md
+#   - changing Stage 0/1/2 semantics declared in docs/reference-semantics.md or docs/fixtures.md
 #   - changing companion.t0 / delta.t / slot.size / k.min defaults
 
 set -euo pipefail

@@ -6,6 +6,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.io.SequenceFile.CompressionType;
+import org.apache.hadoop.io.compress.DefaultCodec;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -33,28 +34,29 @@ import java.util.Set;
  *   <li>{@code companions.csv}      — text {@code vidA,vidB,count} sorted by (count desc, pair asc)</li>
  * </ul>
  *
- * <p>SequenceFile compression is {@link CompressionType#NONE} — fixtures are small and we want
- * byte-stable output without depending on native Snappy. Hadoop SequenceFile readers auto-detect
- * the codec from the file header, so downstream stage code reads these transparently regardless
- * of production codec.
+ * <p>SequenceFile compression is {@link CompressionType#BLOCK} with the pure-Java
+ * {@link DefaultCodec} (gzip). Full mini.csv expands {@code pair_loc_slot.seq} to ~80 MB
+ * uncompressed; BLOCK+gzip brings it under 10 MB so the fixture stays committable. DefaultCodec
+ * is in hadoop-common and needs no native library, keeping the generator byte-stable across
+ * machines. Hadoop SequenceFile readers auto-detect the codec from the file header, so downstream
+ * stage code reads these transparently regardless of production codec.
  *
  * <p>Re-run after any change to {@link RecordWritable}, {@link PairKey}, {@link LocSlotWritable},
- * or to the Stage 0/1/2 semantics declared in {@code docs/fixtures.md}.
+ * or to the Stage 0/1/2 semantics declared in {@code docs/reference-semantics.md}.
  *
- * <p>Stage 1 follows the spec in {@code stage1/README.md}: within each {@code (loc, slot/2)}
- * partition, sliding-window pair emission with closed interval {@code |Δt| <= delta.t}; pair is
- * attributed to the LATER record's slot. Cross-partition pairs (across slots {@code 2k+1} and
- * {@code 2k+2}) are NOT emitted — matching the documented Stage 1 limitation.
+ * <p>Stage 1 here is the <b>ideal</b> semantics: group by {@code loc} only, sort by {@code t},
+ * slide a {@code |Δt| <= delta.t} window, skip same-vid, attribute each pair to the LATER
+ * record's slot ({@code slot = t / slot.size}). There is no {@code slot/2} partitioning and no
+ * boundary loss. Production {@code Stage1Job} currently under-approximates this — see
+ * {@code docs/stage1-boundary-gap.md}. The gap between this fixture and a real cluster run of
+ * Stage 1 is the measured size of that defect (J1b will close it).
+ *
+ * <p>Input is the full {@code tests/data/mini.csv}; cluster_test.sh feeds the same full file to
+ * stage0 so the upstream record set matches what is encoded here.
  */
 public final class FixtureGenerator {
 
     private FixtureGenerator() {}
-
-    /**
-     * Lines of mini.csv participating in fixture generation. Yields ~37 surviving k.min=3 pairs
-     * and ~500 KB total fixture footprint — enough for quick correctness checks downstream.
-     */
-    public static final int LINES = 10_000;
 
     public static void main(String[] args) throws IOException {
         File repoRoot = args.length > 0
@@ -76,8 +78,7 @@ public final class FixtureGenerator {
         int kMin = CompanionConf.kMin(conf);
 
         log("config: t0=" + t0 + ", deltaT=" + deltaT
-            + ", slotSize=" + slotSize + ", kMin=" + kMin
-            + ", lines=" + LINES);
+            + ", slotSize=" + slotSize + ", kMin=" + kMin);
 
         long t = System.currentTimeMillis();
         List<int[]> filtered = stage0(miniCsv, t0);
@@ -108,17 +109,15 @@ public final class FixtureGenerator {
     // ===== Stage 0: parse + frequency filter + t-normalize =====
 
     /**
-     * Returns rows of {vid, loc, tNorm} for the first {@link #LINES} lines of mini.csv, keeping
-     * only vids with frequency >= 2 within that prefix.
+     * Returns rows of {vid, loc, tNorm} for every line of mini.csv, keeping only vids with
+     * frequency >= 2 across the full file.
      */
     static List<int[]> stage0(File miniCsv, int t0) throws IOException {
         Map<Integer, Integer> vidCount = new HashMap<>();
         try (BufferedReader br = new BufferedReader(new FileReader(miniCsv))) {
             String line;
-            int read = 0;
-            while (read < LINES && (line = br.readLine()) != null) {
-                read++;
-                int[] parsed = parseCsvLine(line);
+            while ((line = br.readLine()) != null) {
+                int[] parsed = parseRecord(line, t0);
                 if (parsed == null) continue;
                 vidCount.merge(parsed[0], 1, Integer::sum);
             }
@@ -126,52 +125,75 @@ public final class FixtureGenerator {
         List<int[]> kept = new ArrayList<>();
         try (BufferedReader br = new BufferedReader(new FileReader(miniCsv))) {
             String line;
-            int read = 0;
-            while (read < LINES && (line = br.readLine()) != null) {
-                read++;
-                int[] parsed = parseCsvLine(line);
+            while ((line = br.readLine()) != null) {
+                int[] parsed = parseRecord(line, t0);
                 if (parsed == null) continue;
                 if (vidCount.getOrDefault(parsed[0], 0) < 2) continue;
-                kept.add(new int[]{parsed[0], parsed[1], parsed[2] - t0});
+                kept.add(parsed);
             }
         }
         return kept;
     }
 
-    private static int[] parseCsvLine(String line) {
-        String s = line == null ? "" : line.trim();
-        if (s.isEmpty() || s.startsWith("#")) return null;
-        String[] parts = s.split(",");
-        if (parts.length != 3) return null;
-        try {
-            return new int[]{
-                Integer.parseInt(parts[0].trim()),
-                Integer.parseInt(parts[1].trim()),
-                Integer.parseInt(parts[2].trim())
-            };
-        } catch (NumberFormatException e) {
+    /**
+     * Mirrors {@code stage0.Stage0CsvParser.parseRecord} byte-for-byte: requires exactly two
+     * commas; non-negative {@code vid/loc/ts}; {@code 0 <= ts - t0 <= Integer.MAX_VALUE};
+     * field-internal whitespace tolerated; no integer overflow. We can't share the production
+     * parser directly — it's package-private in stage0 and common can't depend on stage0
+     * (would invert the build graph). Any change here MUST mirror Stage0CsvParser.
+     *
+     * @return {vid, loc, tNorm} on success, else null
+     */
+    private static int[] parseRecord(String line, int t0) {
+        if (line == null) return null;
+        int firstComma = line.indexOf(',');
+        if (firstComma < 0) return null;
+        int secondComma = line.indexOf(',', firstComma + 1);
+        if (secondComma < 0 || line.indexOf(',', secondComma + 1) >= 0) return null;
+        long vid = parseNonNegativeLong(line, 0, firstComma);
+        long loc = parseNonNegativeLong(line, firstComma + 1, secondComma);
+        long ts = parseNonNegativeLong(line, secondComma + 1, line.length());
+        if (vid < 0 || vid > Integer.MAX_VALUE
+                || loc < 0 || loc > Integer.MAX_VALUE
+                || ts < 0) {
             return null;
         }
+        long tNorm = ts - t0;
+        if (tNorm < 0 || tNorm > Integer.MAX_VALUE) return null;
+        return new int[]{(int) vid, (int) loc, (int) tNorm};
     }
 
-    // ===== Stage 1: sliding-window pair emission per (loc, slot/2) partition =====
+    private static long parseNonNegativeLong(String s, int start, int end) {
+        while (start < end && Character.isWhitespace(s.charAt(start))) start++;
+        while (end > start && Character.isWhitespace(s.charAt(end - 1))) end--;
+        if (start >= end) return -1L;
+        long value = 0L;
+        for (int i = start; i < end; i++) {
+            char c = s.charAt(i);
+            if (c < '0' || c > '9') return -1L;
+            value = value * 10L + (c - '0');
+            if (value < 0L) return -1L;
+        }
+        return value;
+    }
+
+    // ===== Stage 1 (ideal): sliding-window pair emission per loc =====
 
     /**
-     * Groups records by {@code (loc, slot/2)} partition; within each partition runs a sliding
-     * window pairing records with {@code |Δt| <= deltaT}. Each pair witness is attributed to
-     * the LATER record's slot. Same-vid pairs are skipped.
+     * Groups records by {@code loc} (no {@code slot/2} partitioning); within each loc runs a
+     * sliding window pairing records with {@code |Δt| <= deltaT}. Each pair witness is attributed
+     * to the LATER record's slot ({@code slot = t / slotSize}). Same-vid pairs are skipped.
+     *
+     * <p>This is the ideal reference. Production {@code Stage1Job} currently partitions on
+     * {@code (loc, slot/2)} and loses {@code 2k+1 → 2k+2} cross-partition pairs — see
+     * {@code docs/stage1-boundary-gap.md}.
      *
      * @return list of {vidA, vidB, loc, slot} with {@code vidA < vidB}
      */
     static List<long[]> stage1(List<int[]> records, int deltaT, int slotSize) {
-        // Group by (loc, partition=slot/2). Use loc<<32 | partition as the map key.
-        Map<Long, List<int[]>> groups = new HashMap<>();
+        Map<Integer, List<int[]>> groups = new HashMap<>();
         for (int[] r : records) {
-            int loc = r[1];
-            int slot = r[2] / slotSize;
-            int partition = slot / 2;
-            long key = ((long) loc << 32) | (partition & 0xffffffffL);
-            groups.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
+            groups.computeIfAbsent(r[1], k -> new ArrayList<>()).add(r);
         }
 
         List<long[]> witnesses = new ArrayList<>();
@@ -243,7 +265,7 @@ public final class FixtureGenerator {
                 SequenceFile.Writer.file(p),
                 SequenceFile.Writer.keyClass(NullWritable.class),
                 SequenceFile.Writer.valueClass(RecordWritable.class),
-                SequenceFile.Writer.compression(CompressionType.NONE))) {
+                SequenceFile.Writer.compression(CompressionType.BLOCK, new DefaultCodec()))) {
             RecordWritable v = new RecordWritable();
             for (int[] r : records) {
                 v.set(r[0], r[1], r[2]);
@@ -269,7 +291,7 @@ public final class FixtureGenerator {
                 SequenceFile.Writer.file(p),
                 SequenceFile.Writer.keyClass(PairKey.class),
                 SequenceFile.Writer.valueClass(LocSlotWritable.class),
-                SequenceFile.Writer.compression(CompressionType.NONE))) {
+                SequenceFile.Writer.compression(CompressionType.BLOCK, new DefaultCodec()))) {
             PairKey k = new PairKey();
             LocSlotWritable v = new LocSlotWritable();
             for (long[] wit : witnesses) {

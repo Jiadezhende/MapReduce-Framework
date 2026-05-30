@@ -23,7 +23,9 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -41,7 +43,11 @@ public class Stage0LocalJobTest {
         conf = new Configuration();
         conf.set("fs.defaultFS", "file:///");
         conf.set("mapreduce.framework.name", "local");
-        conf.setLong(Stage0Bloom.KEY_EXPECTED_ENTRIES, 10_000L);
+        // Stage0 uses a BloomFilter to approximate "vid count >= 2"; FixtureGenerator uses
+        // precise counting. So production output is always a (multiset) SUPERSET of the fixture:
+        // production may keep extra rows whose vid was bloom-FP-promoted. We assert superset +
+        // bounded delta below rather than byte-equal. See docs/reference-semantics.md §7.
+        conf.setLong(Stage0Bloom.KEY_EXPECTED_ENTRIES, 200_000L);
         conf.setFloat(Stage0Bloom.KEY_FALSE_POSITIVE_RATE, 1.0e-9f);
         fs = FileSystem.get(conf);
         workDir = new Path(System.getProperty("java.io.tmpdir"),
@@ -57,11 +63,13 @@ public class Stage0LocalJobTest {
     }
 
     @Test
-    public void stage0JobsProduceGoldenFilteredFixtureFromMiniPrefix() throws Exception {
-        Path input = new Path(workDir, "mini-prefix.csv");
+    public void stage0JobsProduceGoldenFilteredFixtureFromMini() throws Exception {
+        Path input = new Path(workDir, "mini.csv");
         Path freq = new Path(workDir, "vid_freq");
         Path filtered = new Path(workDir, "filtered");
-        writeMiniPrefix(input, 10_000);
+        // Fixture is generated from the full mini.csv (FixtureGenerator dropped its LINES limit),
+        // so this test must feed the same full input. mini.csv is 100k lines.
+        writeMiniPrefix(input, 100_000);
 
         assertEquals(0, ToolRunner.run(conf, new Stage0aFreqJob(),
                 new String[]{input.toString(), freq.toString()}));
@@ -73,12 +81,36 @@ public class Stage0LocalJobTest {
         List<int[]> actual = readRecords(filtered);
         List<int[]> expected = readRecords(new Path(fixture("filtered.seq").toURI()));
 
-        assertEquals("record count", expected.size(), actual.size());
-        for (int i = 0; i < expected.size(); i++) {
-            assertEquals("vid at " + i, expected.get(i)[0], actual.get(i)[0]);
-            assertEquals("loc at " + i, expected.get(i)[1], actual.get(i)[1]);
-            assertEquals("tNorm at " + i, expected.get(i)[2], actual.get(i)[2]);
+        // Superset assertion: every fixture record must appear in the production output with at
+        // least the same multiplicity. Production may emit extra rows due to Bloom FP; the delta
+        // is bounded by BLOOM_FP_DELTA_BOUND. Under the test's 200k/1e-9 bloom, expected FP count
+        // on mini.csv is ~1e-5 — the bound is set far above that as a sanity ceiling rather than
+        // a tight statistical limit.
+        final int BLOOM_FP_DELTA_BOUND = 100;
+        Map<String, Integer> expectedMs = toMultiset(expected);
+        Map<String, Integer> actualMs = toMultiset(actual);
+        for (Map.Entry<String, Integer> e : expectedMs.entrySet()) {
+            Integer got = actualMs.get(e.getKey());
+            assertTrue("missing fixture record in production output: " + e.getKey(), got != null);
+            assertTrue("multiplicity below fixture for " + e.getKey() + ": got=" + got
+                            + " expected>=" + e.getValue(),
+                    got >= e.getValue());
         }
+        int delta = actual.size() - expected.size();
+        assertTrue("delta must be non-negative (production output should be a superset): " + delta,
+                delta >= 0);
+        assertTrue("Bloom FP delta exceeds bound: " + delta + " > " + BLOOM_FP_DELTA_BOUND
+                        + " — either bloom params shrank or mini.csv grew; revisit the bound",
+                delta <= BLOOM_FP_DELTA_BOUND);
+    }
+
+    private static Map<String, Integer> toMultiset(List<int[]> rows) {
+        Map<String, Integer> ms = new HashMap<>(rows.size() * 2);
+        for (int[] r : rows) {
+            String k = r[0] + "," + r[1] + "," + r[2];
+            ms.merge(k, 1, Integer::sum);
+        }
+        return ms;
     }
 
     @Test

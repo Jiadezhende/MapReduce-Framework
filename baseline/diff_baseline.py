@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import sys
 
 
 def parse_args():
@@ -12,12 +13,8 @@ def parse_args():
     parser.add_argument("--phase", default="")
     parser.add_argument("--hll-pairs", default="", help="HLL pairs file or dir")
     parser.add_argument("--hll-rel-error", type=float, default=0.02)
-    parser.add_argument("--stage1-input", default="", help="Optional raw input CSV to simulate Stage1 semantics for structural-missing classification")
-    parser.add_argument("--stage1-lines", type=int, default=10000, help="When simulating Stage1, limit to this many lines (default 10000) to match FixtureGenerator)")
-    parser.add_argument("--t0", type=int, default=1420041600)
-    parser.add_argument("--delta-t", type=int, default=300)
-    parser.add_argument("--slot-size", type=int, default=300)
-    parser.add_argument("--k-min", type=int, default=3)
+    parser.add_argument("--fail-on-diff", action="store_true",
+                        help="Exit 2 if missing_in_mr or extra_in_mr is non-empty")
     return parser.parse_args()
 
 
@@ -83,74 +80,6 @@ def top_pairs(pairs, n):
     return out
 
 
-def simulate_stage1_pairs(input_csv, lines_limit, delta_t, slot_size, k_min):
-    # lightweight single-process Stage1+Stage2 simulation (match FixtureGenerator semantics)
-    # returns a set of pair keys that Stage1 could emit (before Stage2 thresholding)
-    import csv
-    from collections import defaultdict
-
-    # Stage0: read prefix and keep vids with freq>=2
-    counts = defaultdict(int)
-    rows = []
-    with open(input_csv, 'r', encoding='utf-8') as fh:
-        reader = csv.reader(fh)
-        for i, parts in enumerate(reader):
-            if lines_limit and i >= lines_limit:
-                break
-            if not parts or parts[0].strip().startswith('#'):
-                continue
-            try:
-                vid = int(parts[0].strip())
-                loc = int(parts[1].strip())
-                ts = int(parts[2].strip())
-            except Exception:
-                continue
-            rows.append((vid, loc, ts))
-            counts[vid] += 1
-
-    kept = [r for r in rows if counts.get(r[0], 0) >= 2]
-
-    # Stage1: group by (loc, partition=slot//2) and sliding-window
-    groups = defaultdict(list)
-    for vid, loc, ts in kept:
-        slot = (ts - 1420041600) // slot_size
-        partition = slot // 2
-        key = (loc, partition)
-        groups[key].append((vid, loc, ts))
-
-    witnesses = []  # list of (vidA, vidB, loc, slot)
-    for key, group in groups.items():
-        group.sort(key=lambda x: x[2])
-        window = []
-        start = 0
-        for cur in group:
-            cur_vid, cur_loc, cur_ts = cur
-            cur_slot = (cur_ts - 1420041600) // slot_size
-            while start < len(window) and window[start][2] < cur_ts - delta_t:
-                start += 1
-            for j in range(start, len(window)):
-                prev = window[j]
-                if prev[0] == cur_vid:
-                    continue
-                va = min(prev[0], cur_vid)
-                vb = max(prev[0], cur_vid)
-                witnesses.append((va, vb, cur_loc, cur_slot))
-            window.append(cur)
-
-    # Stage2: count distinct (loc, slot) per pair, keep >= k_min
-    pair_to_cells = defaultdict(set)
-    for va, vb, loc, slot in witnesses:
-        pair = pair_key(va, vb)
-        cell = (loc << 32) | (slot & 0xFFFFFFFF)
-        pair_to_cells[pair].add(cell)
-
-    out = set()
-    for pair, cells in pair_to_cells.items():
-        if len(cells) >= k_min:
-            out.add(pair)
-    return out
-
-
 def diff_pairs(mr, baseline, hll_pairs, hll_rel_error):
     mr_keys = set(mr.keys())
     baseline_keys = set(baseline.keys())
@@ -200,25 +129,7 @@ def main():
 
     diff = diff_pairs(mr, baseline, hll_pairs, args.hll_rel_error)
 
-    structural_missing = set()
-    real_missing = set()
-    if args.stage1_input:
-        stage1_pairs = simulate_stage1_pairs(args.stage1_input, args.stage1_lines, args.delta_t, args.slot_size, args.k_min)
-        missing_keys = diff["missing"]
-        # diff['missing'] is a set of keys from baseline not in mr
-        for k in missing_keys:
-            if k in stage1_pairs:
-                real_missing.add(k)
-            else:
-                structural_missing.add(k)
-
-    # If we classified missing keys, expose structural vs real missing; otherwise report missing as before
-    if args.stage1_input:
-        missing_list = top_pairs(((key, baseline[key]) for key in real_missing), 100)
-        structural_list = top_pairs(((key, baseline[key]) for key in structural_missing), 100)
-    else:
-        missing_list = top_pairs(((key, baseline[key]) for key in diff["missing"]), 100)
-        structural_list = []
+    missing_list = top_pairs(((key, baseline[key]) for key in diff["missing"]), 100)
     extra_list = top_pairs(((key, mr[key]) for key in diff["extra"]), 100)
 
     mismatch_items = []
@@ -239,7 +150,6 @@ def main():
         "recall": diff["recall"],
         "count_mae": diff["count_mae"],
         "missing_in_mr": missing_list,
-        "structural_missing_in_baseline": structural_list,
         "extra_in_mr": extra_list,
         "count_mismatches": mismatch_list
     }
@@ -248,6 +158,13 @@ def main():
     with open(args.report, "w", encoding="utf-8") as out:
         json.dump(report, out, indent=2)
         out.write("\n")
+
+    if args.fail_on_diff and (missing_list or extra_list):
+        print(
+            f"diff_baseline: FAILED phase={args.phase} missing={len(missing_list)} extra={len(extra_list)} report={args.report}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 if __name__ == "__main__":

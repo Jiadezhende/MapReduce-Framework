@@ -34,3 +34,9 @@ tests/data/fixtures/.*.crc
 *.log
 logs/
 tmp_stage3_in/
+
+# Python baseline — local venv, bytecode, and run outputs (CSV is already
+# covered above; this also catches Spark's _SUCCESS / .crc sidecars).
+.venv/
+__pycache__/
+baseline/out/
