@@ -137,6 +137,93 @@ done
 
 ---
 
+## §6 cluster_run 杀不掉 stage1 任务,且 1d 数据 Stage 1 跑出小时级——`-D` 选项被静默丢弃
+
+**现象**(两个表象,同一根因):
+1. Ctrl-C 中断 `cluster_run.sh` 后,Stage 1 的 YARN app 没被 kill,留在集群里继续跑。`on_interrupt` 打印的是 `no running YARN apps for run_id=...`,但 YARN UI 里那个 `Stage1Job j1a` 还在。
+2. 1d 数据(~9M 条)Stage 1 跑了几十分钟到小时级,远超预期(应该是分钟级)。
+
+**排查**:用 `mapred job -status` 抓那个还在跑的 Stage1 看到关键证据:
+```
+Number of maps: 2
+Number of reduces: 1     ← 配置是 STAGE1_REDUCERS_1D=8,实际只有 1
+```
+再从 staging 目录抓 `job.xml`:
+```bash
+ssh master 'hadoop fs -cat /tmp/hadoop-yarn/staging/root/.staging/job_<id>/job.xml \
+    | grep -E "mapreduce\.job\.reduces|companion\.run\.tag"'
+# 输出:
+# mapreduce.job.reduces = 1   source=programmatically   ← -D 没生效,退化到 Hadoop 默认
+# companion.run.tag             ← 整个 key 不在 job.xml 里
+```
+
+**根因**:`cluster_run.sh` 的 `submit()` 把 `-D` 拼在**位置参数 `<in> <out>` 之后**:
+```bash
+# 改前
+local cmd="${HADOOP_BIN} jar ... ${class} $* -D companion.run.tag=${RUN_ID}"
+# 各 stage 调用方也是位置参数在前、-D 在后,比如 stage1:
+submit stage1 companion.stage1.Stage1Job "<in>" "<out>" "-D mapreduce.job.reduces=${S1_RED}"
+```
+Hadoop 的 `GenericOptionsParser` 用 Commons CLI 解析,**`stopAtNonOption=true`**——一旦遇到非 option 的位置参数(`<in>`),后面所有 `-D` 都被当成位置参数**静默丢弃**。一个 bug 同时解释了两个表象:
+- `-D mapreduce.job.reduces=8` 被丢 → reducer 数退化到 mapred-default.xml 的默认值 **1** → Stage 1 整个窗口配对串行化到单 reducer → 极慢。
+- `-D companion.run.tag=<run_id>` 被丢 → `tag` 在 Java 端是空串 → `Stage1Job.java:129` 不再追加 `[<run_id>]` → app 名字只是 `Stage1Job j1a` → `cancel_run` 的 `grep -F "[run_id]"` 命中不到 → Ctrl-C 杀不掉。
+
+**为什么 Stage 0 看起来没事**:`Stage0bFilterJob.java:30` 早就遇到过同一个坑,自己手写了绕过:
+```java
+@Override
+public int run(String[] args) throws Exception {
+    Stage0Bloom.applyTrailingDefines(getConf(), args);  // 从 args[2:] 扫尾部 -D 塞回 conf
+    return super.run(args);
+}
+```
+所以 Stage 0b 的 `-D companion.vid_freq.path=...` 被局部补回。**Stage 1/2/3 没这个 workaround,踩坑**。Stage 0a 调用方没传任何业务 -D,只丢了 run.tag,看不出问题。
+
+**修复**:`scripts/cluster_run.sh` 的 `submit()` 改成把 caller 传进来的 args 拆成 `-D` 和位置参数两组,**`-D` 始终拼在位置参数之前**,调用方签名不动:
+```bash
+submit() {
+    local module="$1"; shift
+    local class="$1"; shift
+    local d_opts="-D companion.run.tag=${RUN_ID}"
+    local positional=()
+    for arg in "$@"; do
+        if [[ "${arg}" == -D* ]]; then
+            d_opts="${d_opts} ${arg}"
+        else
+            positional+=("${arg}")
+        fi
+    done
+    if (( ${#EXTRA_CONF[@]} > 0 )); then
+        d_opts="${d_opts} ${EXTRA_CONF[*]}"
+    fi
+    local cmd="${HADOOP_BIN} jar ${REMOTE_JAR_DIR}/${module}.jar ${class} ${d_opts} ${positional[*]}"
+    run ssh "${MASTER_HOST}" "${cmd}"
+}
+```
+
+**验证**:`scripts/cluster_run.sh --days 1 --dry-run` 输出的 stage1 命令变成:
+```
+hadoop jar .../stage1.jar Stage1Job \
+    -D companion.run.tag=<run_id> -D mapreduce.job.reduces=8 \
+    <in> <out>
+```
+重跑后 `mapred job -status` 显示 `Number of reduces: 8`,YARN app 名字带 `[<run_id>]` 后缀,Ctrl-C 触发的 `cancel_run` 能正确 kill。
+
+**收尾遗留的孤儿任务**:tag 缺失的旧任务 `cancel_run` 杀不掉,手动按 app id 杀:
+```bash
+ssh master 'yarn application -appStates RUNNING,ACCEPTED -list' | grep Stage1
+ssh master 'yarn application -kill application_xxxxx_xxxx'
+```
+
+**遗留的次生反模式**(待修,不影响当前流水线):`Stage1Job.java:65` 与 `Stage2Job.java:57` 用了
+```java
+job.setNumReduceTasks(conf.getInt(MRJobConfig.NUM_REDUCES, CompanionConf.stage1Reducers(conf)));
+```
+`mapreduce.job.reduces` 在 `mapred-default.xml` 永远有默认值 1,`conf.getInt` 永远返回 1 而不是 fallback 的 `companion.stage1.reducers`。脚本侧修好后,因为 `-D mapreduce.job.reduces=N` 能传入并覆盖默认 1 而被掩盖;但**任何人直接 `hadoop jar stage1.jar` 不带 -D 仍会拿到 1 reducer**。`cluster_test.sh` 的多 reducer 验证因此也是假阴性(单测 fixture 太小,1 reducer 也能 PASS golden diff)。建议改成 `setNumReduceTasks(CompanionConf.stage1Reducers(conf))`,把 `companion.stage1.reducers` 作为唯一旋钮。Stage 0b 的 `applyTrailingDefines` 在脚本修好后变冗余但无害,可作为兜底保留。
+
+> 经验:**Hadoop 的 `-D` 必须放在位置参数之前**。`GenericOptionsParser` 的 `stopAtNonOption=true` 不会报错也不会警告,只会让 conf "差一点点",表现成"作业能跑但参数不生效",最难排查。看到 `job.xml` 里关键 key `source=programmatically` 或干脆缺失,第一反应就是 -D 顺序。
+
+---
+
 ## 附:尚未处理
 
 - **日志聚合未开**(`yarn.log-aggregation-enable`):容器退出后无法在 Web UI 看 task 的 stderr/stdout。开启需改 `yarn-site.xml` 并同步到所有 worker + 重启 NodeManager(对共享集群有干扰),建议挑空闲窗口做。

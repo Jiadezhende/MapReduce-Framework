@@ -206,15 +206,25 @@ else
 fi
 
 # 5. Submit each Job in the window via non-interactive ssh.
+# Hadoop's GenericOptionsParser uses stopAtNonOption=true: any -D placed after
+# a positional arg is silently dropped. We split caller args into -D options
+# vs. positionals and always emit -D first.
 submit() {
     local module="$1"; shift
     local class="$1"; shift
-    # positional args (in/out) come first, then -D overrides; tag every job with
-    # the run_id so cancel_run can find its YARN apps by name.
-    local cmd="${HADOOP_BIN} jar ${REMOTE_JAR_DIR}/${module}.jar ${class} $* -D companion.run.tag=${RUN_ID}"
+    local d_opts="-D companion.run.tag=${RUN_ID}"
+    local positional=()
+    for arg in "$@"; do
+        if [[ "${arg}" == -D* ]]; then
+            d_opts="${d_opts} ${arg}"
+        else
+            positional+=("${arg}")
+        fi
+    done
     if (( ${#EXTRA_CONF[@]} > 0 )); then
-        cmd="${cmd} ${EXTRA_CONF[*]}"
+        d_opts="${d_opts} ${EXTRA_CONF[*]}"
     fi
+    local cmd="${HADOOP_BIN} jar ${REMOTE_JAR_DIR}/${module}.jar ${class} ${d_opts} ${positional[*]}"
     run ssh "${MASTER_HOST}" "${cmd}"
 }
 
