@@ -94,3 +94,56 @@ HLL pair 可以允许 count 有相对误差，默认容忍 `+/- 2%`；非 HLL pa
 - Spark 实现使用 DataFrame API，不使用 RDD。
 - diff 比较时按 `(vidA, vidB)` 排序后归并扫描，不要把两边全量 join 到内存。
 - `golden_inject.py` 注入 fake vid 时使用大数段，例如 `>= 90000000`，避免和真实 vid 冲突。
+
+## 本地跑法
+
+baseline 是本地独立验证用的脚本，跟集群侧 Hadoop 没关系，环境单独搭。
+
+### 一次性环境
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install pandas 'pyspark==3.5.3'
+```
+
+PySpark 版本必须钉在 3.5.x，原因：
+
+- 4.x 要求 JDK 17+；本机常装的是 Corretto 8（Hadoop 编译需要）和较新的 JDK 26，缺中间版本时 4.x 启动会报 `JAVA_GATEWAY_EXITED`。
+- 3.5.x 兼容 JDK 8/11/17，能直接复用已有的 Corretto 8，不必再装一套 JDK。
+
+Spark baseline 跑之前需要把 `JAVA_HOME` 显式指到 JDK 8（默认 `java` 通常是 JDK 26，Spark 3.5 在 26 上同样会失败）：
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
+export PATH=$JAVA_HOME/bin:$PATH
+```
+
+### 跑 Pandas baseline
+
+```bash
+.venv/bin/python baseline/single_machine.py \
+  --input  tests/data/mini.csv \
+  --output baseline/out/pandas.csv
+```
+
+### 跑 Spark baseline
+
+```bash
+.venv/bin/python baseline/spark_companion.py \
+  --input  tests/data/mini.csv \
+  --output baseline/out/spark_dir \
+  --shuffle-partitions 4
+```
+
+`--output` 是目录，结果在 `baseline/out/spark_dir/part-*.csv`。
+
+### 交叉验证
+
+两份 baseline 在同一输入上应当逐字节一致（HLL 行为只在 MR 侧出现，baseline 不带 HLL）：
+
+```bash
+cp baseline/out/spark_dir/part-*.csv baseline/out/spark.csv
+diff baseline/out/pandas.csv baseline/out/spark.csv
+```
+
+不一致就说明两边语义跑偏了，先修 baseline 再去 diff MR 输出，否则 MR 的对错判断都不可信。
