@@ -20,6 +20,7 @@ public final class CompanionConf {
     public static final int    STAGE1_REDUCERS_DEFAULT   = 8;
     public static final int    STAGE2_REDUCERS_DEFAULT   = 8;
     public static final int    STAGE1_SLOT_OFFSET_DEFAULT = 0;
+    public static final boolean STAGE1_EMIT_WITHIN_SLOT_DEFAULT = true;
     public static final boolean STAGE1_COMPENSATION_ENABLED_DEFAULT = true;
     public static final String RUN_TAG_DEFAULT           = "";
 
@@ -34,6 +35,7 @@ public final class CompanionConf {
     public static final String KEY_STAGE1_REDUCERS  = "companion.stage1.reducers";
     public static final String KEY_STAGE2_REDUCERS  = "companion.stage2.reducers";
     public static final String KEY_STAGE1_SLOT_OFFSET = "companion.stage1.slot.offset";
+    public static final String KEY_STAGE1_EMIT_WITHIN_SLOT = "companion.stage1.emit.within.slot";
     public static final String KEY_STAGE1_COMPENSATION_ENABLED = "companion.stage1.compensation.enabled";
     public static final String KEY_SALT_SEED        = "companion.salt.seed";
     public static final String KEY_RUN_TAG          = "companion.run.tag";
@@ -56,6 +58,9 @@ public final class CompanionConf {
     public static int stage1Reducers(Configuration c){return c.getInt(KEY_STAGE1_REDUCERS, STAGE1_REDUCERS_DEFAULT); }
     public static int stage2Reducers(Configuration c){return c.getInt(KEY_STAGE2_REDUCERS, STAGE2_REDUCERS_DEFAULT); }
     public static int stage1SlotOffset(Configuration c){return c.getInt(KEY_STAGE1_SLOT_OFFSET, STAGE1_SLOT_OFFSET_DEFAULT); }
+    public static boolean stage1EmitWithinSlot(Configuration c) {
+        return c.getBoolean(KEY_STAGE1_EMIT_WITHIN_SLOT, STAGE1_EMIT_WITHIN_SLOT_DEFAULT);
+    }
     public static boolean stage1CompensationEnabled(Configuration c) {
         return c.getBoolean(KEY_STAGE1_COMPENSATION_ENABLED, STAGE1_COMPENSATION_ENABLED_DEFAULT);
     }
