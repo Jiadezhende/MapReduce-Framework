@@ -23,4 +23,7 @@ phase="$3"
 n="${4:-50}"
 
 target="${HDFS_RUNS_ROOT}/${run_id}/${subdir}/${phase}"
+if [[ "${subdir}" == "final" ]]; then
+    target="${target}/companions.csv"
+fi
 ssh "${MASTER_HOST}" "${HADOOP_BIN} fs -cat ${target}/part-* | head -${n}"
