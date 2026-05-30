@@ -25,8 +25,8 @@ def parse_args():
     parser.add_argument("--input", required=True, help="input CSV: vid,loc,ts")
     parser.add_argument("--output", required=True, help="output CSV: vidA,vidB,count")
     parser.add_argument("--config", default="common/src/main/resources/companion-conf.xml")
-    parser.add_argument("--mirror-stage1-limits", action="store_true", default=True,
-                        help="When set (default), mirror Stage1 limits: partition by slot/2 and apply loc_skew.cap dropping")
+    parser.add_argument("--mirror-stage1-limits", action="store_true",
+                        help="Mirror Stage1 limits: partition by (loc, slot/2) and apply loc_skew.cap dropping. Off by default (ideal semantics).")
     parser.add_argument("--t0", type=int)
     parser.add_argument("--delta-t", type=int)
     parser.add_argument("--k-min", type=int)
