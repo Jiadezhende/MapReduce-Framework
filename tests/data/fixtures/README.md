@@ -20,7 +20,7 @@
 - **配置**：`companion.t0=1420041600`、`delta.t=300`、`slot.size=300`、`k.min=3`（[common/src/main/resources/companion-conf.xml](../../../common/src/main/resources/companion-conf.xml) 的默认值）。
 - **参考实现**：[common/src/test/java/companion/io/FixtureGenerator.java](../../../common/src/test/java/companion/io/FixtureGenerator.java)。
   - Stage 0：双 pass，丢弃 vid 出现次数 `< 2` 的记录，`tNorm = ts - t0`；CSV 解析逐字镜像 `Stage0CsvParser.parseRecord`。
-  - Stage 1：**按 `loc` 全局分组**滑窗，`|Δt| ≤ delta.t` 配对；pair 归属到**后到记录**的 slot。**不做 `slot/2` 分区，不丢边界**。这是 ideal 语义；生产 `Stage1Job` 当前不满足（详见 [docs/stage1-boundary-gap.md](../../../docs/stage1-boundary-gap.md)）。
+  - Stage 1：**按 `loc` 全局分组**滑窗，`|Δt| ≤ delta.t` 配对；pair 归属到**后到记录**的 slot。**不做 `slot/2` 分区，不丢边界**。这是 ideal 语义；生产 `Stage1Job` 通过 J1a + J1b 两轮分区覆盖全部相邻 slot 边界。
   - Stage 2：按 PairKey 聚合，distinct `(loc, slot)` 计数，过滤 `< k.min`，按 `(count desc, pair asc)` 排序。
 
 ## 下游单测怎么用
@@ -32,14 +32,13 @@ R3 / R4 / R5 单测可以选择以下任一对账模式：
 
 字节级 diff 比较的是**应用层 (key, value)**——SequenceFile 容器头、压缩 codec 不参与比较。所以你的 fixture 用 Snappy / Default / NONE 任何一种压缩都行。
 
-## `cluster_test.sh --stage stage1` 预期红
+## `cluster_test.sh --stage stage1` 预期绿
 
-stage1 fixture 表达 ideal 语义；生产 `Stage1Job` 还在跑 `(loc, slot/2)` 分区设计。所以：
+stage1 fixture 表达 ideal 语义；生产 `Stage1Job` 现在会跑 `(loc, slot/2)` 的 J1a 和偏移一格的 J1b 补偿轮。所以：
 
-- `cluster_test.sh --stage stage0` / `stage2` / `stage3` → 期望绿
-- `cluster_test.sh --stage stage1` → 期望 **EXPECTED-FAIL**（脚本会以 exit 0 退出但打印 diff）。golden vs cluster 缺失行数应在 golden 总量的 **15–25%**，对应 `docs/stage1-boundary-gap.md` §3 的 boundary loss 估算。J1b 上线后这条会自动恢复绿。
+- `cluster_test.sh --stage stage0` / `stage1` / `stage2` / `stage3` → 期望绿
 
-如果 diff 比例显著偏离 15–25%，说明 stage1 生产代码引入了非 boundary 类型的差异，需立即排查。
+如果 stage1 仍出现 diff，说明 J1b 没有完全补齐奇→偶 slot 边界，需立即排查。
 
 ## 何时重新生成
 
@@ -49,6 +48,6 @@ stage1 fixture 表达 ideal 语义；生产 `Stage1Job` 还在跑 `(loc, slot/2)
 - 修改了 `FixtureGenerator` 中的 Stage 0/1/2 参考实现
 - 修改了 `companion.t0` / `delta.t` / `slot.size` / `k.min` 任一默认值
 - 修改了 `mini.csv` 内容（不太可能）
-- J1b 上线、stage1 production 改为符合 ideal 语义后——此时 `pair_loc_slot.seq` 内容不变（fixture 一直是 ideal），但 `cluster_test --stage stage1` 应从 EXPECTED-FAIL 转为 PASS；若不转说明 J1b 没完全收敛 boundary loss
+- Stage1 的 J1a/J1b 语义、去重口径或输出 witness 归属规则发生变化
 
 [FixtureGoldenRoundTripTest](../../../common/src/test/java/companion/io/FixtureGoldenRoundTripTest.java) 会在上述情况下失败，并在错误信息里提示重生。
