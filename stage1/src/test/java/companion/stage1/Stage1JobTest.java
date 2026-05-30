@@ -61,7 +61,8 @@ public class Stage1JobTest {
         stage1.setConf(conf);
         assertEquals(0, stage1.run(new String[]{in.toString(), out.toString()}));
 
-        Set<String> actual = new HashSet<>(readOutput(conf, out));
+        List<String> actualRows = readOutput(conf, out);
+        Set<String> actual = new HashSet<>(actualRows);
 
         Set<String> expected = new HashSet<>();
         expected.add("1,2,7,0");
@@ -69,6 +70,7 @@ public class Stage1JobTest {
         expected.add("2,3,7,1");
         expected.add("3,4,7,2");
         assertEquals(expected, actual);
+        assertEquals("j1b should not duplicate within-slot witnesses", expected.size(), actualRows.size());
     }
 
     private static void writeFilteredFixture(Configuration conf, Path file) throws Exception {
