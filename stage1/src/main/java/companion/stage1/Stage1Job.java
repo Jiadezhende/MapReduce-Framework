@@ -27,7 +27,9 @@ import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /** Stage 1: generate pair witnesses from filtered vehicle records. */
 public class Stage1Job extends AbstractCompanionJob {
@@ -221,6 +223,10 @@ public class Stage1Job extends AbstractCompanionJob {
 
         private final Deque<SeenRecord> window = new ArrayDeque<>();
         private final List<SeenRecord> tailBuffer = new ArrayList<>();
+        // Deduplicate witnesses inside one reducer group, whose grouping key is exactly
+        // (loc, slot). Stage 2 only counts distinct (loc, slot) per pair, so emitting the
+        // same pair more than once from this group only inflates HDFS/shuffle volume.
+        private final Set<Long> emittedPairs = new HashSet<>();
         private final PairKey outKey = new PairKey();
         private final LocSlotWritable outValue = new LocSlotWritable();
 
@@ -252,6 +258,7 @@ public class Stage1Job extends AbstractCompanionJob {
             }
 
             window.clear();
+            emittedPairs.clear();
             boolean hotCounterEmitted = false;
             List<SeenRecord> currentRecords = new ArrayList<>();
 
@@ -314,11 +321,21 @@ public class Stage1Job extends AbstractCompanionJob {
             if (vid1 == vid2) {
                 return false;
             }
+            int vidA = Math.min(vid1, vid2);
+            int vidB = Math.max(vid1, vid2);
+            long pair = encodePair(vidA, vidB);
+            if (!emittedPairs.add(pair)) {
+                return false;
+            }
             outKey.set(vid1, vid2);
             outValue.set(loc, slot);
             context.write(outKey, outValue);
             context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.PAIRS_EMITTED.name()).increment(1L);
             return true;
+        }
+
+        private static long encodePair(int vidA, int vidB) {
+            return ((long) vidA << 32) ^ (vidB & 0xffffffffL);
         }
 
         private void rebuildTailBuffer(List<SeenRecord> currentRecords) {

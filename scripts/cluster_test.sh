@@ -248,14 +248,6 @@ if diff -u "${GOLDEN_TXT}" "${OUT_TXT}"; then
 else
     G=$(wc -l <"${GOLDEN_TXT}" | tr -d ' ')
     C=$(wc -l <"${OUT_TXT}" | tr -d ' ')
-    if [[ "${STAGE}" == "stage1" ]]; then
-        echo "EXPECTED-FAIL stage1: cluster output differs from golden ${GOLDEN}"
-        echo "  golden lines = ${G}, cluster lines = ${C}"
-        echo "  This is the documented boundary gap (Stage1Job loses 2k+1 -> 2k+2 pairs)."
-        echo "  Expected missing ratio ~15-25% of golden; J1b will close it."
-        echo "  See docs/stage1-boundary-gap.md."
-        exit 0
-    fi
     echo "FAIL ${STAGE}: cluster output differs from golden ${GOLDEN}"
     echo "  golden lines = ${G}, cluster lines = ${C}"
     echo "  (above: --- golden / +++ cluster)"
