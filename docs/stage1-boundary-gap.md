@@ -57,10 +57,10 @@ baseline 按 `loc` 全局分组，跑理想语义——任何同 loc、时间差
 
 ## 4. 两个判据各管什么
 
-- **`FixtureGenerator` + `cluster_test.sh`**：验证 Stage1 的代码实现是否符合**当前设计**（按 `(loc, slot/2)` 分区、丢弃跨边界 pair）。fixture 和 MR 逐字节对齐说明实现没写歪，但不保证设计本身没缺。J1b 落地时这份 fixture 也要一起更新。
-- **baseline**：验证 pipeline 的**端到端语义**是否对——给出无切分、无丢弃情况下应该产出的 pair 集合。Stage1 与 baseline 的 gap 衡量的是设计缺陷规模，不是实现 bug。
+- **`FixtureGenerator` + `cluster_test.sh`**：fixture 表达**理想 Stage1 语义**（按 `loc` 全局滑窗、无 `slot/2` 切分、无边界丢失，详见 [docs/reference-semantics.md](reference-semantics.md) §4）。所以 stage0/2/3 的 cluster_test 期望逐字节绿；**stage1 的 cluster_test 在 J1b 上线前持续红**——这是诚实暴露 boundary gap 实测规模的方式，不再用"design-conformance"的措辞规避。golden vs cluster 的缺失行数比例应落在 15–25% 区间，与 §3 估算吻合。
+- **baseline**：端到端语义 + 性能分析。baseline 默认理想语义、与 stage1 fixture 同源；`--mirror-stage1-limits` 可临时镜像 production 缺陷做诊断对照。
 
-两个判据互补：cluster_test 失败 = Stage1 实现没写对自己的设计；baseline gap 大 = Stage1 设计本身在漏算。J1b 同时要让 cluster_test 在新 fixture 上通过，并把 baseline gap 收敛。
+两个判据互补，但各管各的：cluster_test 是 per-stage 中间结果对账；baseline 是整链路 diff + 大数据量性能验证。J1b 落地时不需要重生 fixture（语义已经是 ideal），只需 stage1 cluster_test 自动从红转绿；若不转绿说明 J1b 没完全收敛 boundary loss。`Stage1JobTest` 内联期望值（`CROSS_SLOT_PAIRS=2` 等）也要在 J1b 上线时同步更新——它当前断言的是缺陷设计的行为。
 
 ---
 
@@ -81,7 +81,7 @@ J1a ∪ J1b:  所有相邻 slot 边界全覆盖 ✓
 | `SkewAwarePartitioner` | 分区偏移：`(slot + offset) / 2`，`offset = isJ1b ? 1 : 0`，由 `companion.salt.seed` 决定 |
 | `Stage1Reducer.canUseTail` | J1b 下 tail buffer 方向反转：`lastSlot % 2 == 1`（奇→偶） |
 | `scripts/cluster_run.sh` | 提交两轮，`getmerge` 合并到同一 `pair_loc_slot/` |
-| `FixtureGenerator` | 新增 J1b 分组逻辑，两轮合并后重新生成 golden fixture |
+| `FixtureGenerator` | **无需改动**（已是 ideal 语义）；`Stage1JobTest` 的 `PAIRS_EMITTED` / `CROSS_SLOT_PAIRS` 内联期望值需更新以反映 J1a+J1b 合并后的结果 |
 
 **去重**：两轮 slot 内部配对会重叠，但 Stage2 计数是 `distinct (loc, slot)`，天然去重，无需额外逻辑。
 
