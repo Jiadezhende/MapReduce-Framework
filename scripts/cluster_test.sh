@@ -52,6 +52,7 @@ MINI_CSV="${LOCAL_DATA_DIR}/tests/data/mini.csv"
 # NOTE stage1: fixture expresses *ideal* Stage1 semantics (full loc grouping, no boundary loss).
 # Production Stage1Job still ships the (loc, slot/2) partition design, so this compare is
 # EXPECTED-FAIL until J1b lands. See docs/stage1-boundary-gap.md and docs/reference-semantics.md.
+# Now fixed.
 case "${STAGE}" in
     stage0) MODULE=stage0; GOLDEN="filtered.seq";       DECODE=text; COMPARE=multiset ;;
     stage1) MODULE=stage1; GOLDEN="pair_loc_slot.seq";  DECODE=text; COMPARE=set ;;
