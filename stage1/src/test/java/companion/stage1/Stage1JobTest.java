@@ -10,15 +10,15 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.SequenceFile;
-import org.apache.hadoop.mapreduce.Job;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -58,28 +58,19 @@ public class Stage1JobTest {
         writeFilteredFixture(conf, new Path(in, "part-00000"));
 
         Stage1Job stage1 = new Stage1Job();
-        Job job = stage1.buildJob(conf, in, out);
-        assertTrue(job.waitForCompletion(false));
+        stage1.setConf(conf);
+        assertEquals(0, stage1.run(new String[]{in.toString(), out.toString()}));
 
-        List<String> actual = readOutput(conf, out);
-        Collections.sort(actual);
+        List<String> actualRows = readOutput(conf, out);
+        Set<String> actual = new HashSet<>(actualRows);
 
-        List<String> expected = new ArrayList<>();
+        Set<String> expected = new HashSet<>();
         expected.add("1,2,7,0");
         expected.add("1,3,7,1");
         expected.add("2,3,7,1");
-        Collections.sort(expected);
+        expected.add("3,4,7,2");
         assertEquals(expected, actual);
-
-        assertEquals(5L, job.getCounters()
-                .findCounter(Stage1Job.COUNTER_GROUP_STAGE1,
-                        Stage1Job.Stage1Counter.INPUT_RECORDS.name()).getValue());
-        assertEquals(3L, job.getCounters()
-                .findCounter(Stage1Job.COUNTER_GROUP_STAGE1,
-                        Stage1Job.Stage1Counter.PAIRS_EMITTED.name()).getValue());
-        assertEquals(2L, job.getCounters()
-                .findCounter(Stage1Job.COUNTER_GROUP_STAGE1,
-                        Stage1Job.Stage1Counter.CROSS_SLOT_PAIRS.name()).getValue());
+        assertEquals("j1b should not duplicate within-slot witnesses", expected.size(), actualRows.size());
     }
 
     private static void writeFilteredFixture(Configuration conf, Path file) throws Exception {
@@ -96,7 +87,7 @@ public class Stage1JobTest {
             writer.append(NullWritable.get(), value);
             value.set(3, 7, 310);
             writer.append(NullWritable.get(), value);
-            value.set(4, 7, 700);
+            value.set(4, 7, 600);
             writer.append(NullWritable.get(), value);
             value.set(9, 8, 10);
             writer.append(NullWritable.get(), value);

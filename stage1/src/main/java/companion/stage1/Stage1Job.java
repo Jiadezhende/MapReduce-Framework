@@ -8,6 +8,9 @@ import companion.io.RecordWritable;
 import companion.job.AbstractCompanionJob;
 import companion.util.HashUtil;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.conf.Configurable;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.SequenceFile;
@@ -24,10 +27,15 @@ import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /** Stage 1: generate pair witnesses from filtered vehicle records. */
 public class Stage1Job extends AbstractCompanionJob {
+
+    private static final String PASS_A = "j1a";
+    private static final String PASS_B = "j1b";
 
     public enum Stage1Counter {
         INPUT_RECORDS,
@@ -66,6 +74,97 @@ public class Stage1Job extends AbstractCompanionJob {
         return job;
     }
 
+    @Override
+    public int run(String[] args) throws Exception {
+        if (args.length < 2) {
+            System.err.println("Usage: " + jobName() + " <input> <output> [-Dkey=value ...]");
+            return 2;
+        }
+
+        Configuration conf = getConf();
+        if (conf == null) {
+            conf = new Configuration();
+        }
+        CompanionConf.applyDefaults(conf);
+
+        Path in = new Path(args[0]);
+        Path out = new Path(args[1]);
+        if (!CompanionConf.stage1CompensationEnabled(conf)) {
+            return runSinglePass(conf, in, out, CompanionConf.stage1SlotOffset(conf), "");
+        }
+
+        FileSystem fs = out.getFileSystem(conf);
+        if (fs.exists(out)) {
+            System.err.println("Output path already exists: " + out);
+            return 1;
+        }
+
+        Path tmpRoot = new Path(out.toString() + "._stage1_tmp_" + System.currentTimeMillis());
+        Path passAOut = new Path(tmpRoot, PASS_A);
+        Path passBOut = new Path(tmpRoot, PASS_B);
+        try {
+            int passA = runSinglePass(conf, in, passAOut, 0, true, PASS_A);
+            if (passA != 0) {
+                return passA;
+            }
+            int passB = runSinglePass(conf, in, passBOut, 1, false, PASS_B);
+            if (passB != 0) {
+                return passB;
+            }
+            materializeOutput(fs, out, passAOut, passBOut);
+            return 0;
+        } finally {
+            fs.delete(tmpRoot, true);
+        }
+    }
+
+    private int runSinglePass(Configuration baseConf, Path in, Path out, int slotOffset, String passName)
+            throws Exception {
+        return runSinglePass(baseConf, in, out, slotOffset, true, passName);
+    }
+
+    private int runSinglePass(Configuration baseConf, Path in, Path out, int slotOffset,
+                              boolean emitWithinSlot, String passName)
+            throws Exception {
+        Configuration passConf = new Configuration(baseConf);
+        passConf.setInt(CompanionConf.KEY_STAGE1_SLOT_OFFSET, Math.floorMod(slotOffset, 2));
+        passConf.setBoolean(CompanionConf.KEY_STAGE1_EMIT_WITHIN_SLOT, emitWithinSlot);
+
+        log.info("Submitting {}{}: in={} out={} slotOffset={} emitWithinSlot={}", jobName(),
+                passName.isEmpty() ? "" : " " + passName, in, out, Math.floorMod(slotOffset, 2),
+                emitWithinSlot);
+        Job job = buildJob(passConf, in, out);
+        String tag = CompanionConf.runTag(passConf);
+        String name = passName.isEmpty() ? jobName() : jobName() + " " + passName;
+        job.setJobName(tag.isEmpty() ? name : name + " [" + tag + "]");
+
+        boolean ok = job.waitForCompletion(true);
+        return ok ? 0 : 1;
+    }
+
+    private static void materializeOutput(FileSystem fs, Path out, Path passAOut, Path passBOut)
+            throws IOException {
+        fs.mkdirs(out);
+        movePartFiles(fs, passAOut, out, PASS_A);
+        movePartFiles(fs, passBOut, out, PASS_B);
+        fs.create(new Path(out, "_SUCCESS"), false).close();
+    }
+
+    private static void movePartFiles(FileSystem fs, Path passOut, Path out, String prefix)
+            throws IOException {
+        FileStatus[] files = fs.listStatus(passOut, path -> path.getName().startsWith("part-"));
+        if (files == null) {
+            return;
+        }
+        for (FileStatus file : files) {
+            Path src = file.getPath();
+            Path dst = new Path(out, "part-" + prefix + "-" + src.getName().substring("part-".length()));
+            if (!fs.rename(src, dst)) {
+                throw new IOException("Failed to move " + src + " to " + dst);
+            }
+        }
+    }
+
     public static class Stage1Mapper
             extends Mapper<NullWritable, RecordWritable, CompositeKey, RecordWritable> {
 
@@ -90,15 +189,32 @@ public class Stage1Job extends AbstractCompanionJob {
         }
     }
 
-    /** Partitions by (loc, slot/2), keeping slot 2k and 2k+1 together. */
+    /**
+     * Partitions by (loc, (slot + offset) / 2). Offset 0 keeps 2k and 2k+1
+     * together; offset 1 keeps 2k+1 and 2k+2 together for the compensation pass.
+     */
     public static class SkewAwarePartitioner
-            extends Partitioner<CompositeKey, RecordWritable> {
+            extends Partitioner<CompositeKey, RecordWritable> implements Configurable {
+        private Configuration conf;
+        private int slotOffset;
+
+        @Override
+        public void setConf(Configuration conf) {
+            this.conf = conf;
+            this.slotOffset = Math.floorMod(CompanionConf.stage1SlotOffset(conf), 2);
+        }
+
+        @Override
+        public Configuration getConf() {
+            return conf;
+        }
+
         @Override
         public int getPartition(CompositeKey key, RecordWritable value, int numPartitions) {
             if (numPartitions <= 0) {
                 return 0;
             }
-            return Math.floorMod(HashUtil.mix(key.getLoc(), key.getSlot() / 2), numPartitions);
+            return Math.floorMod(HashUtil.mix(key.getLoc(), (key.getSlot() + slotOffset) / 2), numPartitions);
         }
     }
 
@@ -107,11 +223,17 @@ public class Stage1Job extends AbstractCompanionJob {
 
         private final Deque<SeenRecord> window = new ArrayDeque<>();
         private final List<SeenRecord> tailBuffer = new ArrayList<>();
+        // Deduplicate witnesses inside one reducer group, whose grouping key is exactly
+        // (loc, slot). Stage 2 only counts distinct (loc, slot) per pair, so emitting the
+        // same pair more than once from this group only inflates HDFS/shuffle volume.
+        private final Set<Long> emittedPairs = new HashSet<>();
         private final PairKey outKey = new PairKey();
         private final LocSlotWritable outValue = new LocSlotWritable();
 
         private int deltaT;
         private int locSkewCap;
+        private int slotOffset;
+        private boolean emitWithinSlot;
         private int lastLoc = Integer.MIN_VALUE;
         private int lastSlot = Integer.MIN_VALUE;
 
@@ -120,6 +242,8 @@ public class Stage1Job extends AbstractCompanionJob {
             Configuration conf = context.getConfiguration();
             deltaT = CompanionConf.deltaT(conf);
             locSkewCap = CompanionConf.locSkewCap(conf);
+            slotOffset = Math.floorMod(CompanionConf.stage1SlotOffset(conf), 2);
+            emitWithinSlot = CompanionConf.stage1EmitWithinSlot(conf);
         }
 
         @Override
@@ -127,19 +251,24 @@ public class Stage1Job extends AbstractCompanionJob {
                 throws IOException, InterruptedException {
             int loc = key.getLoc();
             int slot = key.getSlot();
-            boolean canUseTail = loc == lastLoc && slot == lastSlot + 1 && lastSlot % 2 == 0;
+            boolean canUseTail = loc == lastLoc && slot == lastSlot + 1
+                    && Math.floorMod(lastSlot + slotOffset, 2) == 0;
             if (!canUseTail) {
                 tailBuffer.clear();
             }
 
             window.clear();
+            emittedPairs.clear();
             boolean hotCounterEmitted = false;
             List<SeenRecord> currentRecords = new ArrayList<>();
 
             for (RecordWritable value : values) {
                 SeenRecord cur = new SeenRecord(value.getVid(), value.getTNorm());
                 emitCrossSlotPairs(loc, slot, cur, canUseTail, context);
-                emitWithinSlotPairs(loc, slot, cur, context);
+                pruneWindow(cur);
+                if (emitWithinSlot) {
+                    emitWithinSlotPairs(loc, slot, cur, context);
+                }
 
                 if (window.size() >= locSkewCap) {
                     context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.SKEW_DROP.name()).increment(1L);
@@ -176,11 +305,14 @@ public class Stage1Job extends AbstractCompanionJob {
 
         private void emitWithinSlotPairs(int loc, int slot, SeenRecord cur, Context context)
                 throws IOException, InterruptedException {
-            while (!window.isEmpty() && window.peekFirst().ts < cur.ts - deltaT) {
-                window.pollFirst();
-            }
             for (SeenRecord prev : window) {
                 emitPair(prev.vid, cur.vid, loc, slot, context);
+            }
+        }
+
+        private void pruneWindow(SeenRecord cur) {
+            while (!window.isEmpty() && window.peekFirst().ts < cur.ts - deltaT) {
+                window.pollFirst();
             }
         }
 
@@ -189,11 +321,21 @@ public class Stage1Job extends AbstractCompanionJob {
             if (vid1 == vid2) {
                 return false;
             }
+            int vidA = Math.min(vid1, vid2);
+            int vidB = Math.max(vid1, vid2);
+            long pair = encodePair(vidA, vidB);
+            if (!emittedPairs.add(pair)) {
+                return false;
+            }
             outKey.set(vid1, vid2);
             outValue.set(loc, slot);
             context.write(outKey, outValue);
             context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.PAIRS_EMITTED.name()).increment(1L);
             return true;
+        }
+
+        private static long encodePair(int vidA, int vidB) {
+            return ((long) vidA << 32) ^ (vidB & 0xffffffffL);
         }
 
         private void rebuildTailBuffer(List<SeenRecord> currentRecords) {

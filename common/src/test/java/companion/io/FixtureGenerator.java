@@ -182,11 +182,12 @@ public final class FixtureGenerator {
     /**
      * Groups records by {@code loc} (no {@code slot/2} partitioning); within each loc runs a
      * sliding window pairing records with {@code |Δt| <= deltaT}. Each pair witness is attributed
-     * to the LATER record's slot ({@code slot = t / slotSize}). Same-vid pairs are skipped.
+     * to the LATER record's slot ({@code slot = t / slotSize}). Same-vid pairs are skipped, and
+     * duplicate pairs inside the same {@code (loc, slot)} cell are emitted once because Stage 2
+     * counts distinct cells per pair.
      *
-     * <p>This is the ideal reference. Production {@code Stage1Job} currently partitions on
-     * {@code (loc, slot/2)} and loses {@code 2k+1 → 2k+2} cross-partition pairs — see
-     * {@code docs/stage1-boundary-gap.md}.
+     * <p>This is the ideal reference. Production {@code Stage1Job} uses compensated J1A/J1B
+     * passes over {@code (loc, slot/2)} partitions to cover both slot-boundary directions.
      *
      * @return list of {vidA, vidB, loc, slot} with {@code vidA < vidB}
      */
@@ -198,6 +199,9 @@ public final class FixtureGenerator {
 
         List<long[]> witnesses = new ArrayList<>();
         ArrayDeque<int[]> window = new ArrayDeque<>();
+        Set<Long> emittedInCell = new HashSet<>();
+        int lastLoc = Integer.MIN_VALUE;
+        int lastSlot = Integer.MIN_VALUE;
         for (List<int[]> group : groups.values()) {
             group.sort((a, b) -> Integer.compare(a[2], b[2]));
             window.clear();
@@ -206,6 +210,11 @@ public final class FixtureGenerator {
                 int curVid = cur[0];
                 int curLoc = cur[1];
                 int curSlot = curT / slotSize;
+                if (curLoc != lastLoc || curSlot != lastSlot) {
+                    emittedInCell.clear();
+                    lastLoc = curLoc;
+                    lastSlot = curSlot;
+                }
                 while (!window.isEmpty() && window.peekFirst()[2] < curT - deltaT) {
                     window.pollFirst();
                 }
@@ -213,6 +222,8 @@ public final class FixtureGenerator {
                     if (prev[0] == curVid) continue;
                     int va = Math.min(prev[0], curVid);
                     int vb = Math.max(prev[0], curVid);
+                    long pair = (long) va << 32 | (vb & 0xffffffffL);
+                    if (!emittedInCell.add(pair)) continue;
                     witnesses.add(new long[]{va, vb, curLoc, curSlot});
                 }
                 window.addLast(cur);
