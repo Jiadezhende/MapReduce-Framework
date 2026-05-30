@@ -79,4 +79,10 @@
         <description>Run identifier folded into the YARN job name (e.g. the cluster_run.sh run_id) so a run's apps can be located and killed. Empty = no tag.</description>
     </property>
 
+    <property>
+        <name>companion.stage1.emit.within.slot</name>
+        <value>true</value>
+        <description>Internal Stage1 pass flag. True emits within-slot pairs; the compensation pass disables it so J1b only emits cross-slot boundary pairs.</description>
+    </property>
+
 </configuration>

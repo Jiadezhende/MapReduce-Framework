@@ -101,11 +101,11 @@ public class Stage1Job extends AbstractCompanionJob {
         Path passAOut = new Path(tmpRoot, PASS_A);
         Path passBOut = new Path(tmpRoot, PASS_B);
         try {
-            int passA = runSinglePass(conf, in, passAOut, 0, PASS_A);
+            int passA = runSinglePass(conf, in, passAOut, 0, true, PASS_A);
             if (passA != 0) {
                 return passA;
             }
-            int passB = runSinglePass(conf, in, passBOut, 1, PASS_B);
+            int passB = runSinglePass(conf, in, passBOut, 1, false, PASS_B);
             if (passB != 0) {
                 return passB;
             }
@@ -118,11 +118,19 @@ public class Stage1Job extends AbstractCompanionJob {
 
     private int runSinglePass(Configuration baseConf, Path in, Path out, int slotOffset, String passName)
             throws Exception {
+        return runSinglePass(baseConf, in, out, slotOffset, true, passName);
+    }
+
+    private int runSinglePass(Configuration baseConf, Path in, Path out, int slotOffset,
+                              boolean emitWithinSlot, String passName)
+            throws Exception {
         Configuration passConf = new Configuration(baseConf);
         passConf.setInt(CompanionConf.KEY_STAGE1_SLOT_OFFSET, Math.floorMod(slotOffset, 2));
+        passConf.setBoolean(CompanionConf.KEY_STAGE1_EMIT_WITHIN_SLOT, emitWithinSlot);
 
-        log.info("Submitting {}{}: in={} out={} slotOffset={}", jobName(),
-                passName.isEmpty() ? "" : " " + passName, in, out, Math.floorMod(slotOffset, 2));
+        log.info("Submitting {}{}: in={} out={} slotOffset={} emitWithinSlot={}", jobName(),
+                passName.isEmpty() ? "" : " " + passName, in, out, Math.floorMod(slotOffset, 2),
+                emitWithinSlot);
         Job job = buildJob(passConf, in, out);
         String tag = CompanionConf.runTag(passConf);
         String name = passName.isEmpty() ? jobName() : jobName() + " " + passName;
@@ -219,6 +227,7 @@ public class Stage1Job extends AbstractCompanionJob {
         private int deltaT;
         private int locSkewCap;
         private int slotOffset;
+        private boolean emitWithinSlot;
         private int lastLoc = Integer.MIN_VALUE;
         private int lastSlot = Integer.MIN_VALUE;
 
@@ -228,6 +237,7 @@ public class Stage1Job extends AbstractCompanionJob {
             deltaT = CompanionConf.deltaT(conf);
             locSkewCap = CompanionConf.locSkewCap(conf);
             slotOffset = Math.floorMod(CompanionConf.stage1SlotOffset(conf), 2);
+            emitWithinSlot = CompanionConf.stage1EmitWithinSlot(conf);
         }
 
         @Override
@@ -248,7 +258,10 @@ public class Stage1Job extends AbstractCompanionJob {
             for (RecordWritable value : values) {
                 SeenRecord cur = new SeenRecord(value.getVid(), value.getTNorm());
                 emitCrossSlotPairs(loc, slot, cur, canUseTail, context);
-                emitWithinSlotPairs(loc, slot, cur, context);
+                pruneWindow(cur);
+                if (emitWithinSlot) {
+                    emitWithinSlotPairs(loc, slot, cur, context);
+                }
 
                 if (window.size() >= locSkewCap) {
                     context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.SKEW_DROP.name()).increment(1L);
@@ -285,11 +298,14 @@ public class Stage1Job extends AbstractCompanionJob {
 
         private void emitWithinSlotPairs(int loc, int slot, SeenRecord cur, Context context)
                 throws IOException, InterruptedException {
-            while (!window.isEmpty() && window.peekFirst().ts < cur.ts - deltaT) {
-                window.pollFirst();
-            }
             for (SeenRecord prev : window) {
                 emitPair(prev.vid, cur.vid, loc, slot, context);
+            }
+        }
+
+        private void pruneWindow(SeenRecord cur) {
+            while (!window.isEmpty() && window.peekFirst().ts < cur.ts - deltaT) {
+                window.pollFirst();
             }
         }
 
