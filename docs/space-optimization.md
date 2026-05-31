@@ -391,18 +391,22 @@ ssh master "hdfs dfs -ls /companion/input/raw/31d.csv"
 ### 8.2 提交命令
 
 ```bash
-scripts/cluster_run.sh --days 31 --build \
-  -Dcompanion.stage1.reducers=128 \
-  -Dcompanion.stage2.reducers=128 \
-  -Dmapreduce.reduce.memory.mb=4096 -Dmapreduce.reduce.java.opts=-Xmx3072m \
-  -Dcompanion.hll.threshold=100000
+scripts/cluster_run.sh --days 31 --build
 ```
 
-参数取舍：
-- `companion.stage{1,2}.reducers=128` 绕开 §3.3 NUM_REDUCES 反模式（不要传 `-Dmapreduce.job.reduces`）
-- shuffle / Stage0+1 输出压缩已在 H5/H6 默认开，**不用再传 -D**
-- `reduce.memory.mb=4096` 不要 6144，8GB worker 上能并行 2 reducer/worker
-- HLL 阈值降到 10 万防止热 pair OOM
+不需要再手传任何 `-D`。`scripts/env.sh:TUNE_31D` 已固化所有 31d 专用参数，`cluster_run.sh` 按 `--days 31` 自动拼到每个 stage 提交命令上。
+
+`TUNE_31D` 内容与取舍（基于 master NM/DN 上线后 20 GB / 18 vCore / 3 DN 的实际容量）：
+
+| 参数 | 取舍 |
+|---|---|
+| `REDUCERS_31D=32`（在 env.sh） | 7d 的 32 已是当前并发槽位的最佳点；加到 128 只是排队 25 波，wall-time 不变 |
+| `reduce.memory.mb=2048`<br>`reduce.java.opts=-Xmx1536m` | 7d 实测 Peak Reduce Physical 600 MB，2 GB 是 3.4× 余量。reducer 内存从 4 GB 降到 2 GB，并发槽位 5 → 9（master 1 + worker1 4 + worker2 4），Stage1/2 wall-time 砍 1/3 |
+| `map.memory.mb=1536`<br>`map.java.opts=-Xmx1024m` | map 端类似下调，并发 ~10 → ~13 |
+| `task.io.sort.mb=400` | map sort buffer 从默认 100 MB 提到 400 MB，spill 次数 ~½，Stage2 期间 worker 本地盘累计写量从 297 GB（7d 数）降到 ~150 GB，关键防 worker2 `/` 撞 95% 红线 |
+| `companion.hll.threshold=100000` | 防热 pair OOM（保留 7d 用法） |
+
+shuffle 压缩、Stage0/1 输出压缩已在 H5/H6 默认开，不用再传 `-D`。
 
 ### 8.3 已知风险（无算法改造的前提下）
 

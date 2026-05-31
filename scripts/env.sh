@@ -24,11 +24,20 @@
 : "${YARN_QUEUE:=default}"
 : "${REDUCERS_1D:=8}"
 : "${REDUCERS_7D:=32}"
-: "${REDUCERS_31D:=128}"
+: "${REDUCERS_31D:=32}"
+
+# Per-phase container + spill tuning.
+# Default 7d sizing fits the 16 GB container pool; 31d needs smaller per-container
+# memory to fit more concurrent reducers into the post-master-NM 20 GB pool
+# (5 → 9 concurrent), plus a bigger map sort buffer so Stage2 nm-local-dir peak
+# stays under the 95% disk-health threshold. See docs/space-optimization.md §8.2.
+: "${TUNE_1D:=}"
+: "${TUNE_7D:=}"
+: "${TUNE_31D:=-D mapreduce.map.memory.mb=1536 -D mapreduce.map.java.opts=-Xmx1024m -D mapreduce.reduce.memory.mb=2048 -D mapreduce.reduce.java.opts=-Xmx1536m -D mapreduce.task.io.sort.mb=400 -D companion.hll.threshold=100000}"
 
 export COMPANION_ROOT HADOOP_CONF_DIR HADOOP_BIN LOCAL_DATA_DIR YARN_QUEUE
 export MASTER_HOST HDFS_INPUT_ROOT HDFS_RUNS_ROOT HDFS_TEST_ROOT_BASE REMOTE_SUBMIT_BASE
-export REDUCERS_1D REDUCERS_7D REDUCERS_31D
+export REDUCERS_1D REDUCERS_7D REDUCERS_31D TUNE_1D TUNE_7D TUNE_31D
 
 # Resolve the freshly-built shaded jar for a given module.
 companion_jar() {
