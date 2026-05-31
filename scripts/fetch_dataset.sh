@@ -42,7 +42,7 @@ echo "local:  ${local_path}"
 if [[ "${DRY_RUN}" == "false" ]]; then
     if ! ssh "${MASTER_HOST}" "${HADOOP_BIN} fs -test -e ${remote}"; then
         echo "ERROR: ${remote} not found on HDFS." >&2
-        echo "       Ask the maintainer to run scripts/upload_to_hdfs.sh ${SIZE}.csv" >&2
+        echo "       Ask the maintainer to upload it, e.g.: ssh ${MASTER_HOST} \"${HADOOP_BIN} fs -put -f <local>/${SIZE}.csv ${HDFS_INPUT_ROOT}/${SIZE}.csv\"" >&2
         exit 1
     fi
 fi

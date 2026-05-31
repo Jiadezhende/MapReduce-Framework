@@ -82,7 +82,9 @@ fi
 
 if [[ -z "${RUN_ID}" ]]; then
     git_sha=$(cd "${LOCAL_DATA_DIR}" && git rev-parse --short HEAD 2>/dev/null || echo "nogit")
-    RUN_ID="${USER}-${git_sha}-$(date +%Y%m%d%H%M%S)"
+    # $USER isn't set on Windows/Git Bash (it uses $USERNAME); fall back so
+    # `set -u` doesn't abort the run.
+    RUN_ID="${USER:-${USERNAME:-user}}-${git_sha}-$(date +%Y%m%d%H%M%S)"
 fi
 
 case "${PHASE}" in
@@ -117,6 +119,17 @@ echo "hdfs run root = ${HDFS_RUN_ROOT}"
 echo "remote submit = ${REMOTE_SUBMIT_DIR}"
 echo
 
+# Pin Java to 1.8 before any build or submit.
+assert_java8 "${DRY_RUN}"
+echo
+
+# The master subnet rate-limits by source IP — a burst of fresh ssh/scp
+# DROP-bans the whole IP for ~5 min. The setup phase below (mkdir + scp×N +
+# HDFS checks + prepare_out) is exactly such a burst, so its idempotent calls
+# go through remote_ssh/remote_scp (env.sh), which throttle and retry-on-ban.
+# The long-running `hadoop jar` submits stay plain ssh: they're minutes apart
+# (no burst) and must NOT auto-retry — a re-submit would duplicate the YARN app.
+
 # run a command, or just echo it under --dry-run
 run() {
     echo "+ $*"
@@ -139,14 +152,14 @@ done
 
 # 3. Stage area on master + scp each stage jar (resolved on demand, so no
 #    bash-4 associative array is needed — keeps this runnable under macOS bash 3.2).
-run ssh "${MASTER_HOST}" "mkdir -p ${REMOTE_JAR_DIR}"
+run remote_ssh "mkdir -p ${REMOTE_JAR_DIR}"
 for module in "${NEEDED_MODULES[@]}"; do
     if [[ "${DRY_RUN}" == "true" ]] && ! ls "${LOCAL_DATA_DIR}/${module}/target/${module}-"*.jar >/dev/null 2>&1; then
         local_jar="${LOCAL_DATA_DIR}/${module}/target/${module}-<version>.jar"
     else
         local_jar=$(companion_jar "${module}")
     fi
-    run scp "${local_jar}" "${MASTER_HOST}:${REMOTE_JAR_DIR}/${module}.jar"
+    run remote_scp "${local_jar}" "${REMOTE_JAR_DIR}/${module}.jar"
 done
 
 # 4. Upstream dependency checks
@@ -157,7 +170,7 @@ hdfs_exists() {
         echo "+ ssh ${MASTER_HOST} ${HADOOP_BIN} fs -test -e ${path}"
         return 0
     fi
-    ssh "${MASTER_HOST}" "${HADOOP_BIN} fs -test -e ${path}"
+    remote_ssh "${HADOOP_BIN} fs -test -e ${path}"
 }
 
 # returns 0 if <out_dir>/_SUCCESS exists, i.e. that stage already completed.
@@ -170,7 +183,7 @@ stage_done() {
         echo "+ ssh ${MASTER_HOST} ${HADOOP_BIN} fs -test -e ${out}/_SUCCESS"
         return 1
     fi
-    ssh "${MASTER_HOST}" "${HADOOP_BIN} fs -test -e ${out}/_SUCCESS" 2>/dev/null
+    remote_ssh "${HADOOP_BIN} fs -test -e ${out}/_SUCCESS" 2>/dev/null
 }
 
 # Clear any previous/partial output dir so Hadoop accepts the (re)run. Called
@@ -182,15 +195,16 @@ prepare_out() {
         echo "+ ssh ${MASTER_HOST} ${HADOOP_BIN} fs -rm -r -f ${out}  # if exists"
         return 0
     fi
-    if ssh "${MASTER_HOST}" "${HADOOP_BIN} fs -test -e ${out}" 2>/dev/null; then
-        run ssh "${MASTER_HOST}" "${HADOOP_BIN} fs -rm -r -f -skipTrash ${out}"
+    if remote_ssh "${HADOOP_BIN} fs -test -e ${out}" 2>/dev/null; then
+        run remote_ssh "${HADOOP_BIN} fs -rm -r -f -skipTrash ${out}"
     fi
 }
 
 if (( FROM_IDX == 0 )); then
     if ! hdfs_exists "${HDFS_INPUT_ROOT}/${PHASE}.csv"; then
         echo "ERROR: raw input missing: ${HDFS_INPUT_ROOT}/${PHASE}.csv" >&2
-        echo "hint:  run scripts/upload_to_hdfs.sh ${PHASE}.csv first" >&2
+        echo "hint:  upload it first, e.g.:" >&2
+        echo "         scp ${PHASE}.csv ${MASTER_HOST}:/tmp/ && ssh ${MASTER_HOST} \"${HADOOP_BIN} fs -put -f /tmp/${PHASE}.csv ${HDFS_INPUT_ROOT}/${PHASE}.csv\"" >&2
         exit 3
     fi
 else
@@ -291,7 +305,7 @@ echo
 echo "Done. run_id=${RUN_ID}"
 echo "Inspect with:"
 echo "  scripts/cluster_status.sh ${RUN_ID}"
-echo "  scripts/cluster_head.sh ${RUN_ID} final ${PHASE}"
+echo "  scripts/cluster_fetch.sh ${RUN_ID} ${PHASE}   # pull TopN + metrics to ./out/${RUN_ID}/"
 echo "Resume (skips completed stages):"
 echo "  scripts/cluster_run.sh --days ${PHASE%d} --run-id ${RUN_ID}"
 echo "Cancel running jobs:"
