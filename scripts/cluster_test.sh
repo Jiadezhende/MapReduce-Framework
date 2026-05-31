@@ -150,7 +150,7 @@ submit() {
         "${HADOOP_BIN} jar ${REMOTE_STAGE_JAR} ${jobclass} ${in} ${out} $*${extra}"
 }
 
-RED_CONF="-D mapreduce.job.reduces=${REDUCERS}"
+RED_CONF="-D companion.stage0a.reducers=${REDUCERS} -D companion.stage1.reducers=${REDUCERS} -D companion.stage2.reducers=${REDUCERS} -D companion.stage3.reducers=${REDUCERS}"
 case "${STAGE}" in
     stage0)
         submit companion.stage0.Stage0aFreqJob \

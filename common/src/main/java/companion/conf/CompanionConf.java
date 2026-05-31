@@ -17,6 +17,7 @@ public final class CompanionConf {
     public static final int    PAIR_SALT_N_DEFAULT       = 16;
     public static final int    HLL_THRESHOLD_DEFAULT      = 1_000_000;
     public static final int    TOP_N_DEFAULT             = 10_000;
+    public static final int    STAGE0A_REDUCERS_DEFAULT  = 8;
     public static final int    STAGE1_REDUCERS_DEFAULT   = 8;
     public static final int    STAGE2_REDUCERS_DEFAULT   = 8;
     public static final int    STAGE3_REDUCERS_DEFAULT   = 8;
@@ -33,6 +34,7 @@ public final class CompanionConf {
     public static final String KEY_PAIR_SALT_N      = "companion.pair.salt.n";
     public static final String KEY_HLL_THRESHOLD    = "companion.hll.threshold";
     public static final String KEY_TOP_N            = "companion.top.n";
+    public static final String KEY_STAGE0A_REDUCERS = "companion.stage0a.reducers";
     public static final String KEY_STAGE1_REDUCERS  = "companion.stage1.reducers";
     public static final String KEY_STAGE2_REDUCERS  = "companion.stage2.reducers";
     public static final String KEY_STAGE3_REDUCERS  = "companion.stage3.reducers";
@@ -57,6 +59,7 @@ public final class CompanionConf {
     public static int pairSaltN(Configuration c)   { return c.getInt(KEY_PAIR_SALT_N, PAIR_SALT_N_DEFAULT); }
     public static int hllThreshold(Configuration c){ return c.getInt(KEY_HLL_THRESHOLD, HLL_THRESHOLD_DEFAULT); }
     public static int topN(Configuration c)        { return c.getInt(KEY_TOP_N, TOP_N_DEFAULT); }
+    public static int stage0aReducers(Configuration c){return c.getInt(KEY_STAGE0A_REDUCERS, STAGE0A_REDUCERS_DEFAULT); }
     public static int stage1Reducers(Configuration c){return c.getInt(KEY_STAGE1_REDUCERS, STAGE1_REDUCERS_DEFAULT); }
     public static int stage2Reducers(Configuration c){return c.getInt(KEY_STAGE2_REDUCERS, STAGE2_REDUCERS_DEFAULT); }
     public static int stage3Reducers(Configuration c){return c.getInt(KEY_STAGE3_REDUCERS, STAGE3_REDUCERS_DEFAULT); }

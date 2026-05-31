@@ -24,6 +24,11 @@ mvn -pl common -q dependency:build-classpath \
 
 CP="common/target/test-classes:common/target/classes:$(cat "$CP_FILE")"
 
+# Drop stale Hadoop ChecksumFileSystem sidecars before regen — FixtureGenerator
+# writes via RawLocalFileSystem (no .crc), so any pre-existing .crc would
+# silently desync from the new .seq and break local tests with ChecksumException.
+find tests/data/fixtures/ -name '.*.crc' -delete
+
 java -cp "$CP" companion.io.FixtureGenerator "$(pwd)"
 
 echo

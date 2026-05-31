@@ -15,7 +15,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -64,7 +63,7 @@ public class Stage1Job extends AbstractCompanionJob {
         job.setReducerClass(Stage1Reducer.class);
         job.setOutputKeyClass(PairKey.class);
         job.setOutputValueClass(LocSlotWritable.class);
-        job.setNumReduceTasks(conf.getInt(MRJobConfig.NUM_REDUCES, CompanionConf.stage1Reducers(conf)));
+        job.setNumReduceTasks(CompanionConf.stage1Reducers(conf));
 
         job.setOutputFormatClass(SequenceFileOutputFormat.class);
         SequenceFileOutputFormat.setOutputPath(job, out);

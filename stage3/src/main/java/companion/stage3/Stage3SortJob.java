@@ -11,7 +11,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.MRJobConfig;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
@@ -117,7 +116,7 @@ public class Stage3SortJob extends AbstractCompanionJob {
         TextOutputFormat.setOutputPath(job, sortedDir);
         job.getConfiguration().set("mapreduce.output.textoutputformat.separator", "");
 
-        int reducers = conf.getInt(MRJobConfig.NUM_REDUCES, CompanionConf.stage3Reducers(conf));
+        int reducers = CompanionConf.stage3Reducers(conf);
         job.setNumReduceTasks(reducers);
 
         if (reducers > 1) {

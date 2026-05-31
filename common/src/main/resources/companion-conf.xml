@@ -56,6 +56,12 @@
     </property>
 
     <property>
+        <name>companion.stage0a.reducers</name>
+        <value>8</value>
+        <description>Stage 0a (vid frequency) reducer count for the 1d profile. cluster_run.sh injects per-phase -D.</description>
+    </property>
+
+    <property>
         <name>companion.stage1.reducers</name>
         <value>8</value>
         <description>Stage 1 reducer count for the 1d profile. Bump to 32 (7d) / 128 (31d) via -D override.</description>
@@ -68,6 +74,12 @@
     </property>
 
     <property>
+        <name>companion.stage3.reducers</name>
+        <value>8</value>
+        <description>Stage 3 reducer count for the 1d profile.</description>
+    </property>
+
+    <property>
         <name>companion.salt.seed</name>
         <value>20260514</value>
         <description>Seed for J1 salt slicing. Change to run J1b with a second seed and merge results to recover skew loss.</description>
@@ -75,7 +87,7 @@
 
     <property>
         <name>companion.run.tag</name>
-        <value></value>
+        <value/>
         <description>Run identifier folded into the YARN job name (e.g. the cluster_run.sh run_id) so a run's apps can be located and killed. Empty = no tag.</description>
     </property>
 
@@ -83,6 +95,23 @@
         <name>companion.stage1.emit.within.slot</name>
         <value>true</value>
         <description>Internal Stage1 pass flag. True emits within-slot pairs; the compensation pass disables it so J1b only emits cross-slot boundary pairs.</description>
+    </property>
+
+    <property>
+        <name>mapreduce.map.output.compress</name>
+        <value>true</value>
+        <description>Snappy-compress mapper→reducer shuffle spill. Cuts NM local-dir IO and disk pressure on the small worker / partition.</description>
+    </property>
+
+    <property>
+        <name>mapreduce.map.output.compress.codec</name>
+        <value>org.apache.hadoop.io.compress.SnappyCodec</value>
+    </property>
+
+    <property>
+        <name>mapreduce.job.reduce.slowstart.completedmaps</name>
+        <value>0.9</value>
+        <description>Hold reducer container launch until 90% of mappers finish, so reducers don't capture slots that mappers still need.</description>
     </property>
 
 </configuration>
