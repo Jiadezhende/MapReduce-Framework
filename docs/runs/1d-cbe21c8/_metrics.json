@@ -1,0 +1,1 @@
+{"phase":"1d","pair_total":23071570,"count_histogram":{"3":17241467,"4":4207582,"5-9":1618474,"10-99":4047,"100-999":0,"1000+":0},"hll_pair_count":0,"counters":{"STAGE3.TOPN_EMITTED":10000},"wall_clock_ms":{"STAGE0":0,"STAGE1":0,"STAGE2":0,"STAGE3":0}}
