@@ -86,11 +86,11 @@ if [[ -z "${RUN_ID}" ]]; then
 fi
 
 case "${PHASE}" in
-    1d)  RED="${REDUCERS_1D}"  ;;
-    7d)  RED="${REDUCERS_7D}"  ;;
-    31d) RED="${REDUCERS_31D}" ;;
+    1d)  RED="${REDUCERS_1D}";  TUNE="${TUNE_1D}"  ;;
+    7d)  RED="${REDUCERS_7D}";  TUNE="${TUNE_7D}"  ;;
+    31d) RED="${REDUCERS_31D}"; TUNE="${TUNE_31D}" ;;
 esac
-RED_CONF="-D companion.stage0a.reducers=${RED} -D companion.stage1.reducers=${RED} -D companion.stage2.reducers=${RED} -D companion.stage3.reducers=${RED}"
+RED_CONF="-D companion.stage0a.reducers=${RED} -D companion.stage1.reducers=${RED} -D companion.stage2.reducers=${RED} -D companion.stage3.reducers=${RED} ${TUNE}"
 
 HDFS_RUN_ROOT="${HDFS_RUNS_ROOT}/${RUN_ID}"
 REMOTE_SUBMIT_DIR="${REMOTE_SUBMIT_BASE}/${RUN_ID}"
