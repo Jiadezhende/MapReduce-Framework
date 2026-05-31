@@ -12,7 +12,7 @@ One tree under `${COMPANION_ROOT}` (default `/companion`), with four kinds of su
 
 ```
 ${COMPANION_ROOT}/
-├── input/raw/{1d,7d,31d}.csv         # Raw CSV (owner: R1 upload_to_hdfs.sh)
+├── input/raw/{1d,7d,31d}.csv         # Raw CSV (owner: R1; uploaded via scp + hadoop fs -put)
 ├── snapshots/current/                # Stable cross-stage snapshots (v2, integration-owner only)
 │   ├── filtered/{phase}/
 │   ├── pair_loc_slot/{phase}/

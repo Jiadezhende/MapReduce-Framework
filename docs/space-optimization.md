@@ -163,7 +163,7 @@ Stage1 写 31 GB（× 2 副本 ≈ 62 GB）+ Stage2 启动后 shuffle 中间文�
 
 ### 3.3 显式没做（持有的技术债）
 
-- **Stage2/3 输出加压缩**：`Stage3SortJob.java` 有 3 处裸 `FSDataInputStream` 读（`countLinesInDir:358`、`scanSortedOutput:211`、`runTopNJob:262` 硬编码 `part-r-00000` rename）+ `cluster_head.sh:33` 用 `hdfs dfs -cat`，光开 Stage2 输出压缩会让 `MultipleOutputs` 的 `_hll_pairs/` 也压，Stage3 立挂。要做需配套 `CompressionCodecFactory` 改裸读 + rename glob + cluster_head 改 `-text`，单开。
+- **Stage2/3 输出加压缩**：`Stage3SortJob.java` 有 3 处裸 `FSDataInputStream` 读（`countLinesInDir:358`、`scanSortedOutput:211`、`runTopNJob:262` 硬编码 `part-r-00000` rename）+ `cluster_fetch.sh` 用 `hadoop fs -cat`，光开 Stage2 输出压缩会让 `MultipleOutputs` 的 `_hll_pairs/` 也压，Stage3 立挂。要做需配套 `CompressionCodecFactory` 改裸读 + rename glob + cluster_fetch 改 `-text`，单开。
 - **Stage1/Stage2 reducer 数被静默吞掉**：`Stage1Job.java:67`、`Stage2Job.java:57-58` 用 `job.setNumReduceTasks(conf.getInt(MRJobConfig.NUM_REDUCES, fallback))`。`MRJobConfig.NUM_REDUCES`（即 `mapreduce.job.reduces`）在 `mapred-default.xml` 永远有默认值 1，`conf.getInt` 永远返回那个 1 而不是 fallback。规避方式：脚本始终传 `-D mapreduce.job.reduces=${RED}`（`cluster_run.sh:93 RED_CONF`），生产路径不踩；代码修复留作技术债。
 - **`balanced-space-preference-fraction` 0.85 → 0.95**：线上仍是 0.85（2026-05-31 实测 `hdfs-site.xml`）。§3.2 修复直后 worker / 都跌到 < 30%，"不急"的判断成立；但 7d 跑活跃期 worker2 / 会回到 60%+（实测当前 62%，剩 20 GB），双卷差距 ~20%。31d 跑前再 `df` 一次，若 worker2 / 超 70% 建议升 0.95 让 AvailableSpace 更激进往空卷写。
 
@@ -345,10 +345,10 @@ public static class Stage1Reducer extends Reducer<...> {
 
 **问题**：Stage2 输出只占 run 的 9.3%（1d 实测 365 MB / 3.4 GB），砍它收益小。
 
-**为何没做**：`Stage3SortJob.java` 有 3 处裸 `FSDataInputStream` 读（`countLinesInDir:358` / `scanSortedOutput:211` / `runTopNJob:262` 硬编码 `part-r-00000` rename）+ `cluster_head.sh:33` 用 `hdfs dfs -cat`，光开 Stage2 输出压缩会让 `MultipleOutputs` 的 `_hll_pairs/` 也压，Stage3 立挂。要做需配套：
+**为何没做**：`Stage3SortJob.java` 有 3 处裸 `FSDataInputStream` 读（`countLinesInDir:358` / `scanSortedOutput:211` / `runTopNJob:262` 硬编码 `part-r-00000` rename）+ `cluster_fetch.sh` 用 `hadoop fs -cat`，光开 Stage2 输出压缩会让 `MultipleOutputs` 的 `_hll_pairs/` 也压，Stage3 立挂。要做需配套：
 - `CompressionCodecFactory` 改裸读
 - rename 改 glob 匹配
-- `cluster_head.sh` 改 `hdfs dfs -text`
+- `cluster_fetch.sh` 改 `hadoop fs -text`
 
 工作量约 1-2 天，但 ROI 低（最多砍 ~30 MB 在 1d，~3 GB 在 31d），单开。
 

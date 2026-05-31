@@ -33,11 +33,15 @@ sha256  tests/data/mini.csv 4dc507f55766492b28ea4b4adaa2e69127febcf94a7ab8ac9d4b
 
 ## 分发方式
 
-**集群路径才是唯一可信源。** 维护者在本地通过 `scripts/upload_to_hdfs.sh`（脚本内部走 scp + ssh，本地无需 hadoop）把 csv 推到 HDFS 的 `${COMPANION_ROOT}/input/raw/`（默认 `/companion/input/raw/`），所有阶段都从这里读输入：
+**集群路径才是唯一可信源。** 维护者在本地用 `scp` + `ssh master "hadoop fs -put"`（本地无需 hadoop）把 csv 推到 HDFS 的 `${COMPANION_ROOT}/input/raw/`（默认 `/companion/input/raw/`），所有阶段都从这里读输入：
 
 ```bash
 # 维护者：一次性推送（之后增量更新也走这条命令，-put -f 覆盖）
-scripts/upload_to_hdfs.sh 1d.csv 7d.csv 31d.csv
+ssh master "hadoop fs -mkdir -p /companion/input/raw"
+for f in 1d.csv 7d.csv 31d.csv; do
+    scp "$f" "master:/tmp/$f"
+    ssh master "hadoop fs -put -f /tmp/$f /companion/input/raw/$f && rm -f /tmp/$f"
+done
 ```
 
 组员有两种用法：

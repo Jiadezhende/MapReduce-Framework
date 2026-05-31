@@ -72,7 +72,7 @@ mvn -B clean verify
 
 ```bash
 # 1. 上传原始 CSV 到 HDFS（维护者一次性操作；组员见 docs/data.md）
-scripts/upload_to_hdfs.sh 1d.csv 7d.csv 31d.csv
+scp 1d.csv master:/tmp/ && ssh master "hadoop fs -mkdir -p /companion/input/raw && hadoop fs -put -f /tmp/1d.csv /companion/input/raw/1d.csv"
 
 # 2. 本地构建并提交 1d 端到端
 scripts/cluster_run.sh --days 1 --build --dry-run    # 先看命令
@@ -80,7 +80,7 @@ scripts/cluster_run.sh --days 1 --build              # 实际提交
 
 # 3. 不登录 master 也能看结果
 scripts/cluster_status.sh <run_id>
-scripts/cluster_head.sh   <run_id> final 1d
+scripts/cluster_fetch.sh  <run_id> 1d
 ```
 
 配置可以用 `-D` 覆盖，例如：

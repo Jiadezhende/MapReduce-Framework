@@ -23,7 +23,7 @@
 |---|---|---|---|---|
 | Shuffle | mapper→reducer 中间 spill（落 NM `local-dirs`） | `companion-conf.xml:100-109` 全局 | 开 / Snappy | YARN NodeManager + reducer fetcher |
 | HDFS 输出（Stage0/1） | 落 HDFS 的 `SequenceFile` part 文件 | 各 Job Java 代码 `setCompressOutput` | 开 / zlib（DefaultCodec）/ BLOCK | 下游 Stage 的 `SequenceFileInputFormat` |
-| HDFS 输出（Stage2/3） | 落 HDFS 的明文 CSV | 未配置 | 不压缩 | Stage3 / `cluster_head.sh` / 用户 |
+| HDFS 输出（Stage2/3） | 落 HDFS 的明文 CSV | 未配置 | 不压缩 | Stage3 / `cluster_fetch.sh` / 用户 |
 
 三个位独立，互不传染——Stage1 输出走 zlib 不会逼下游 Stage2 也用 zlib；shuffle 走 Snappy 也不影响 HDFS 输出 codec。
 
@@ -148,7 +148,7 @@ _hll_pairs/...            ←  Stage2 旁路给 Stage3 metric 用的 HLL 寄存�
    - `countLinesInDir:358`（统计 metric 用行数）
    - `scanSortedOutput:211`（Stage3 reducer 后扫一遍输出做 top-N 输入）
    - `runTopNJob:262`（硬编码 `part-r-00000` rename，要改成 glob 匹配压缩后缀）
-2. `cluster_head.sh:33` 用 `hdfs dfs -cat`，要改 `hdfs dfs -text`（`-text` 会自动按 codec 解压）。
+2. `cluster_fetch.sh` 用 `hadoop fs -cat` 流式拉取，要改 `hadoop fs -text`（`-text` 会自动按 codec 解压）。
 3. Stage2 旁路 `MultipleOutputs._hll_pairs/`：开了 Stage2 输出压缩它会跟着压，Stage3 metric 计算路径如果走裸读会**立挂**。
 
 ### 4.3 ROI
@@ -169,7 +169,7 @@ _hll_pairs/...            ←  Stage2 旁路给 Stage3 metric 用的 HLL 寄存�
 | `Stage3SortJob.java:358` `countLinesInDir` | 裸 `FSDataInputStream` + `BufferedReader` | 用 `CompressionCodecFactory.getCodec(path)`，存在则 `codec.createInputStream(in)` 套一层 |
 | `Stage3SortJob.java:211` `scanSortedOutput` | 同上 | 同上 |
 | `Stage3SortJob.java:262` `runTopNJob` rename | 硬编码 `part-r-00000` → `top_n.csv` | `globStatus("part-r-*")` 取首个，保留扩展名 |
-| `scripts/cluster_head.sh:33` | `hdfs dfs -cat` | 换 `hdfs dfs -text`，对未压缩文件等价、对压缩文件自动解 |
+| `scripts/cluster_fetch.sh` | `hadoop fs -cat` | 换 `hadoop fs -text`，对未压缩文件等价、对压缩文件自动解 |
 | Stage2 `_hll_pairs/` MultipleOutputs | `TextOutputFormat` 跟主输出 | 要么单独 `setOutputFormat` 旁路，要么 Stage3 读端按 codec 走 |
 
 ---

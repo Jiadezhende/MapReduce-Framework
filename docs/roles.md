@@ -34,7 +34,7 @@ R1 一次性把跨模块接口做齐做透，让 R2~R6 之后只 `import`、不�
 | Counter 名称 | 4 个 stage 的 13 个 Counter 名（见 [architecture.md §3](architecture.md#3-counter-naming)）做成常量类或 enum；stage 代码不允许字符串字面量 | 待新增 |
 | Fixture schema | [docs/fixtures.md](fixtures.md) 规定 `filtered.seq` / `pair_loc_slot.seq` / `companions.csv` 的字节布局和最小有效记录 | 已落 |
 | 时间 / 哈希工具 | `TimeUtil`、`HashUtil` | 已落 |
-| Scripts 骨架 | `scripts/env.sh`、`scripts/cluster_run.sh`、`scripts/cluster_status.sh`、`scripts/cluster_head.sh`、`scripts/upload_to_hdfs.sh`、`scripts/fetch_dataset.sh` 全部走非登录模式（scp + ssh master），无登录 master 行为 | 已落 |
+| Scripts 骨架 | `scripts/env.sh`、`scripts/cluster_run.sh`、`scripts/cluster_status.sh`、`scripts/cluster_fetch.sh`、`scripts/fetch_dataset.sh` 全部走非登录模式（scp + ssh master），无登录 master 行为 | 已落 |
 
 ### "做齐"的两条机械化判据
 
