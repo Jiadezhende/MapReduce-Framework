@@ -150,7 +150,7 @@ public class Stage0LocalJobTest {
 
     private List<int[]> readRecords(Path path) throws IOException {
         List<int[]> records = new ArrayList<>();
-        if (fs.isDirectory(path)) {
+        if (fs.getFileStatus(path).isDirectory()) {
             for (FileStatus status : fs.listStatus(path)) {
                 if (status.getPath().getName().startsWith("part-")) {
                     records.addAll(readRecords(status.getPath()));
@@ -172,7 +172,7 @@ public class Stage0LocalJobTest {
 
     private BloomFilter readBloom(Path path) throws IOException {
         BloomFilter bloom = null;
-        if (fs.isDirectory(path)) {
+        if (fs.getFileStatus(path).isDirectory()) {
             for (FileStatus status : fs.listStatus(path)) {
                 if (status.getPath().getName().startsWith("part-")) {
                     BloomFilter part = readBloom(status.getPath());

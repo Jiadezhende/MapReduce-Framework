@@ -22,6 +22,7 @@ import org.apache.hadoop.util.ToolRunner;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -116,7 +117,7 @@ public class Stage3SortJob extends AbstractCompanionJob {
         TextOutputFormat.setOutputPath(job, sortedDir);
         job.getConfiguration().set("mapreduce.output.textoutputformat.separator", "");
 
-        int reducers = conf.getInt(MRJobConfig.NUM_REDUCES, CompanionConf.stage2Reducers(conf));
+        int reducers = conf.getInt(MRJobConfig.NUM_REDUCES, CompanionConf.stage3Reducers(conf));
         job.setNumReduceTasks(reducers);
 
         if (reducers > 1) {
@@ -334,10 +335,13 @@ public class Stage3SortJob extends AbstractCompanionJob {
 
     private static long countLinesInDir(Configuration conf, Path dir) throws IOException {
         FileSystem fs = dir.getFileSystem(conf);
-        if (!fs.exists(dir)) {
+        FileStatus dirStatus;
+        try {
+            dirStatus = fs.getFileStatus(dir);
+        } catch (FileNotFoundException e) {
             return 0L;
         }
-        if (!fs.isDirectory(dir)) {
+        if (!dirStatus.isDirectory()) {
             return countLinesInFile(fs, dir);
         }
         long total = 0L;
@@ -377,12 +381,15 @@ public class Stage3SortJob extends AbstractCompanionJob {
 
         Path p = new Path(historyPath);
         FileSystem fs = p.getFileSystem(conf);
-        if (!fs.exists(p)) {
+        FileStatus pStatus;
+        try {
+            pStatus = fs.getFileStatus(p);
+        } catch (FileNotFoundException e) {
             return new HistoryResult(counters, wallClock);
         }
 
         List<Path> files = new ArrayList<>();
-        if (fs.isDirectory(p)) {
+        if (pStatus.isDirectory()) {
             FileStatus[] statuses = fs.listStatus(p);
             if (statuses != null) {
                 for (FileStatus s : statuses) {
@@ -423,7 +430,9 @@ public class Stage3SortJob extends AbstractCompanionJob {
 
             // extract counters by key
             for (String key : wantedCounters) {
-                if (counters.containsKey(key)) continue;
+                if (counters.containsKey(key)) {
+                    continue;
+                }
                 int pos = content.indexOf(key);
                 if (pos >= 0) {
                     int end = Math.min(content.length(), pos + 1024);
@@ -557,7 +566,9 @@ public class Stage3SortJob extends AbstractCompanionJob {
             out.append("\"counters\":{");
             boolean first = true;
             for (Map.Entry<String, Long> e : counters.entrySet()) {
-                if (!first) out.append(',');
+                if (!first) {
+                    out.append(',');
+                }
                 first = false;
                 out.append('"').append(e.getKey()).append('"').append(':').append(e.getValue());
             }
@@ -566,7 +577,9 @@ public class Stage3SortJob extends AbstractCompanionJob {
             out.append("\"wall_clock_ms\":{");
             first = true;
             for (Map.Entry<String, Long> e : wallClockMs.entrySet()) {
-                if (!first) out.append(',');
+                if (!first) {
+                    out.append(',');
+                }
                 first = false;
                 out.append('"').append(e.getKey()).append('"').append(':').append(e.getValue());
             }

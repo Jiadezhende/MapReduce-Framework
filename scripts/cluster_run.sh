@@ -86,10 +86,11 @@ if [[ -z "${RUN_ID}" ]]; then
 fi
 
 case "${PHASE}" in
-    1d)  S1_RED="${STAGE1_REDUCERS_1D}";  S2_RED="${STAGE2_REDUCERS_1D}"  ;;
-    7d)  S1_RED="${STAGE1_REDUCERS_7D}";  S2_RED="${STAGE2_REDUCERS_7D}"  ;;
-    31d) S1_RED="${STAGE1_REDUCERS_31D}"; S2_RED="${STAGE2_REDUCERS_31D}" ;;
+    1d)  RED="${REDUCERS_1D}"  ;;
+    7d)  RED="${REDUCERS_7D}"  ;;
+    31d) RED="${REDUCERS_31D}" ;;
 esac
+RED_CONF="-D mapreduce.job.reduces=${RED}"
 
 HDFS_RUN_ROOT="${HDFS_RUNS_ROOT}/${RUN_ID}"
 REMOTE_SUBMIT_DIR="${REMOTE_SUBMIT_BASE}/${RUN_ID}"
@@ -238,7 +239,8 @@ if (( FROM_IDX <= 0 && UNTIL_IDX >= 0 )); then
         prepare_out "${s0_out}"
         submit stage0 companion.stage0.Stage0aFreqJob \
             "${HDFS_INPUT_ROOT}/${PHASE}.csv" \
-            "${s0_freq}"
+            "${s0_freq}" \
+            "${RED_CONF}"
         submit stage0 companion.stage0.Stage0bFilterJob \
             "${HDFS_INPUT_ROOT}/${PHASE}.csv" \
             "${s0_out}" \
@@ -255,7 +257,7 @@ if (( FROM_IDX <= 1 && UNTIL_IDX >= 1 )); then
         submit stage1 companion.stage1.Stage1Job \
             "${HDFS_RUN_ROOT}/filtered/${PHASE}" \
             "${s1_out}" \
-            "-D mapreduce.job.reduces=${S1_RED}"
+            "${RED_CONF}"
     fi
 fi
 
@@ -268,7 +270,7 @@ if (( FROM_IDX <= 2 && UNTIL_IDX >= 2 )); then
         submit stage2 companion.stage2.Stage2Job \
             "${HDFS_RUN_ROOT}/pair_loc_slot/${PHASE}" \
             "${s2_out}" \
-            "-D mapreduce.job.reduces=${S2_RED}"
+            "${RED_CONF}"
     fi
 fi
 
@@ -280,7 +282,8 @@ if (( FROM_IDX <= 3 && UNTIL_IDX >= 3 )); then
         prepare_out "${s3_out}"
         submit stage3 companion.stage3.Stage3SortJob \
             "${HDFS_RUN_ROOT}/companions/${PHASE}" \
-            "${s3_out}"
+            "${s3_out}" \
+            "${RED_CONF}"
     fi
 fi
 

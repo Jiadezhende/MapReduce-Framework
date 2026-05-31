@@ -93,7 +93,7 @@ public class Stage3SortJobTest {
 
     private static List<String> readLines(FileSystem fs, Path path) throws Exception {
         List<String> lines = new ArrayList<>();
-        if (fs.isDirectory(path)) {
+        if (fs.getFileStatus(path).isDirectory()) {
             FileStatus[] statuses = fs.listStatus(path, p -> p.getName().startsWith("part-"));
             if (statuses == null) {
                 return lines;
