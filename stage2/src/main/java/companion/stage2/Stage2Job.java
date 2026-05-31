@@ -47,7 +47,6 @@ public class Stage2Job extends AbstractCompanionJob {
         job.setMapOutputKeyClass(PairKey.class);
         job.setMapOutputValueClass(LocSlotWritable.class);
 
-        job.setCombinerClass(DedupCombiner.class);
         job.setPartitionerClass(PairPartitioner.class);
 
         job.setReducerClass(Stage2Reducer.class);
@@ -71,25 +70,6 @@ public class Stage2Job extends AbstractCompanionJob {
             context.write(key, value);
             context.getCounter(COUNTER_GROUP_STAGE2,
                     Stage2Counter.PAIRS_INPUT.name()).increment(1L);
-        }
-    }
-
-    public static class DedupCombiner
-            extends Reducer<PairKey, LocSlotWritable, PairKey, LocSlotWritable> {
-
-        private final LocSlotWritable outValue = new LocSlotWritable();
-
-        @Override
-        protected void reduce(PairKey key, Iterable<LocSlotWritable> values, Context context)
-                throws IOException, InterruptedException {
-            Set<Long> witnesses = new HashSet<>();
-            for (LocSlotWritable value : values) {
-                witnesses.add(encodeWitness(value.getLoc(), value.getSlot()));
-            }
-            for (Long witness : witnesses) {
-                outValue.set(decodeLoc(witness), decodeSlot(witness));
-                context.write(key, outValue);
-            }
         }
     }
 
