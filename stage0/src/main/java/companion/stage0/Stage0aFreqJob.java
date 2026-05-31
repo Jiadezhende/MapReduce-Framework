@@ -35,6 +35,7 @@ public class Stage0aFreqJob extends AbstractCompanionJob {
         job.setMapperClass(FreqMapper.class);
         job.setCombinerClass(SumCombiner.class);
         job.setReducerClass(FreqReducer.class);
+        job.setNumReduceTasks(CompanionConf.stage0aReducers(conf));
 
         job.setMapOutputKeyClass(IntWritable.class);
         job.setMapOutputValueClass(IntWritable.class);

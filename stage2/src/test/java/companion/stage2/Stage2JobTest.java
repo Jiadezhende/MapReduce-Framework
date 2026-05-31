@@ -15,6 +15,7 @@ import org.junit.rules.TemporaryFolder;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -176,13 +177,16 @@ public class Stage2JobTest {
                                                   boolean requireDirectory) throws Exception {
         FileSystem fs = FileSystem.getLocal(conf);
         List<String> rows = new ArrayList<>();
-        if (!fs.exists(path)) {
+        FileStatus pathStatus;
+        try {
+            pathStatus = fs.getFileStatus(path);
+        } catch (FileNotFoundException e) {
             if (requireDirectory) {
                 return rows;
             }
             throw new IllegalArgumentException("missing path: " + path);
         }
-        if (fs.isDirectory(path)) {
+        if (pathStatus.isDirectory()) {
             for (FileStatus status : fs.listStatus(path)) {
                 String name = status.getPath().getName();
                 if (name.startsWith("part-") || name.startsWith("part-m-")) {

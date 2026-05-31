@@ -36,7 +36,7 @@ public class Stage3SortJobTest {
         conf.set("mapreduce.framework.name", "local");
         conf.set("fs.defaultFS", "file:///");
         conf.setInt(CompanionConf.KEY_TOP_N, 2);
-        conf.setInt("mapreduce.job.reduces", 1);
+        conf.setInt(CompanionConf.KEY_STAGE3_REDUCERS, 1);
 
         FileSystem fs = FileSystem.getLocal(conf);
         Path in = new Path(tmp.newFolder("in").toURI());
@@ -93,7 +93,7 @@ public class Stage3SortJobTest {
 
     private static List<String> readLines(FileSystem fs, Path path) throws Exception {
         List<String> lines = new ArrayList<>();
-        if (fs.isDirectory(path)) {
+        if (fs.getFileStatus(path).isDirectory()) {
             FileStatus[] statuses = fs.listStatus(path, p -> p.getName().startsWith("part-"));
             if (statuses == null) {
                 return lines;

@@ -19,18 +19,16 @@
 : "${REMOTE_SUBMIT_BASE:=/tmp/companion/submit}"
 
 # Submit-side knobs. Override in a per-user wrapper if needed.
+# A single per-phase reducer count drives stage0a/1/2/3 in cluster_run.sh —
+# scale-by-data-volume, not per-stage. cluster_test.sh has its own --reducers.
 : "${YARN_QUEUE:=default}"
-: "${STAGE1_REDUCERS_1D:=8}"
-: "${STAGE1_REDUCERS_7D:=32}"
-: "${STAGE1_REDUCERS_31D:=128}"
-: "${STAGE2_REDUCERS_1D:=8}"
-: "${STAGE2_REDUCERS_7D:=32}"
-: "${STAGE2_REDUCERS_31D:=128}"
+: "${REDUCERS_1D:=8}"
+: "${REDUCERS_7D:=32}"
+: "${REDUCERS_31D:=128}"
 
 export COMPANION_ROOT HADOOP_CONF_DIR HADOOP_BIN LOCAL_DATA_DIR YARN_QUEUE
 export MASTER_HOST HDFS_INPUT_ROOT HDFS_RUNS_ROOT HDFS_TEST_ROOT_BASE REMOTE_SUBMIT_BASE
-export STAGE1_REDUCERS_1D STAGE1_REDUCERS_7D STAGE1_REDUCERS_31D
-export STAGE2_REDUCERS_1D STAGE2_REDUCERS_7D STAGE2_REDUCERS_31D
+export REDUCERS_1D REDUCERS_7D REDUCERS_31D
 
 # Resolve the freshly-built shaded jar for a given module.
 companion_jar() {
