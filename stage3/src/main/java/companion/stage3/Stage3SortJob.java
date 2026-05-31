@@ -9,13 +9,13 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
-import org.apache.hadoop.mapreduce.lib.partition.InputSampler;
 import org.apache.hadoop.mapreduce.lib.partition.TotalOrderPartitioner;
 import org.apache.hadoop.util.ToolRunner;
 
@@ -28,10 +28,12 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -127,8 +129,7 @@ public class Stage3SortJob extends AbstractCompanionJob {
         return job;
     }
 
-    private static void configurePartitionFile(Job job) throws IOException, InterruptedException,
-            ClassNotFoundException {
+    private static void configurePartitionFile(Job job) throws IOException {
         Configuration conf = job.getConfiguration();
         FileSystem fs = PARTITION_PATH.getFileSystem(conf);
         Path parent = PARTITION_PATH.getParent();
@@ -139,9 +140,101 @@ public class Stage3SortJob extends AbstractCompanionJob {
             fs.delete(PARTITION_PATH, false);
         }
         TotalOrderPartitioner.setPartitionFile(conf, PARTITION_PATH);
-        InputSampler.Sampler<Stage3Key, Text> sampler =
-                new InputSampler.RandomSampler<>(0.001, 10_000, 10);
-        InputSampler.writePartitionFile(job, sampler);
+
+        int numReducers = job.getNumReduceTasks();
+        // 目标每分区 ~200 条样本，下限 10_000 兜底
+        int numSamples = Math.max(numReducers * 200, 10_000);
+        int maxFiles = 10;
+
+        List<Stage3Key> samples = sampleStage3Keys(job, numSamples, maxFiles);
+        if (samples.isEmpty()) {
+            throw new IOException("No samples collected for Stage3 partition file");
+        }
+        Collections.sort(samples);
+
+        try (SequenceFile.Writer writer = SequenceFile.createWriter(conf,
+                SequenceFile.Writer.file(PARTITION_PATH),
+                SequenceFile.Writer.keyClass(Stage3Key.class),
+                SequenceFile.Writer.valueClass(NullWritable.class))) {
+            for (int i = 1; i < numReducers; i++) {
+                int idx = (int) ((long) i * samples.size() / numReducers);
+                if (idx >= samples.size()) {
+                    idx = samples.size() - 1;
+                }
+                writer.append(samples.get(idx), NullWritable.get());
+            }
+        }
+    }
+
+    private static List<Stage3Key> sampleStage3Keys(Job job, int numSamples, int maxFiles)
+            throws IOException {
+        Configuration conf = job.getConfiguration();
+        Path[] inputPaths = TextInputFormat.getInputPaths(job);
+        List<FileStatus> dataFiles = new ArrayList<>();
+        for (Path p : inputPaths) {
+            FileSystem fs = p.getFileSystem(conf);
+            FileStatus root;
+            try {
+                root = fs.getFileStatus(p);
+            } catch (FileNotFoundException e) {
+                continue;
+            }
+            if (root.isDirectory()) {
+                collectInputFiles(fs, p, dataFiles);
+            } else if (root.getLen() > 0) {
+                dataFiles.add(root);
+            }
+        }
+        if (dataFiles.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Collections.shuffle(dataFiles, new Random(0L));
+        int filesToRead = Math.min(maxFiles, dataFiles.size());
+        int perFile = Math.max(1, numSamples / filesToRead);
+
+        List<Stage3Key> samples = new ArrayList<>(numSamples);
+        for (int i = 0; i < filesToRead; i++) {
+            FileStatus fst = dataFiles.get(i);
+            FileSystem fs = fst.getPath().getFileSystem(conf);
+            try (FSDataInputStream in = fs.open(fst.getPath());
+                 BufferedReader reader = new BufferedReader(
+                         new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                String line;
+                int read = 0;
+                while (read < perFile && (line = reader.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    try {
+                        ParsedLine pl = parseLine(line);
+                        samples.add(new Stage3Key(pl.count, pl.vidA, pl.vidB));
+                        read++;
+                    } catch (IOException ignore) {
+                        // 跳过格式异常的行
+                    }
+                }
+            }
+        }
+        return samples;
+    }
+
+    private static void collectInputFiles(FileSystem fs, Path dir, List<FileStatus> out)
+            throws IOException {
+        FileStatus[] children = fs.listStatus(dir);
+        if (children == null) {
+            return;
+        }
+        for (FileStatus c : children) {
+            String name = c.getPath().getName();
+            if (name.startsWith("_") || name.startsWith(".")) {
+                continue;
+            }
+            if (c.isDirectory()) {
+                collectInputFiles(fs, c.getPath(), out);
+            } else if (c.getLen() > 0) {
+                out.add(c);
+            }
+        }
     }
 
     public static class SortMapper extends Mapper<Object, Text, Stage3Key, Text> {
