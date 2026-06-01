@@ -64,9 +64,27 @@ public class Stage2Job extends AbstractCompanionJob {
 
     public static class Stage2Mapper
             extends Mapper<PairKey, LocSlotWritable, PairKey, LocSlotWritable> {
+        // Pair-hash sharding: when rounds > 1, this sub-job emits only the pairs
+        // assigned to its round, so per-node shuffle peak is ~1/rounds. A pair's
+        // every witness shares (vidA, vidB), so mix() is constant → all witnesses
+        // of a pair land in exactly one round (rounds form a disjoint partition).
+        private int rounds;
+        private int round;
+
+        @Override
+        protected void setup(Context context) {
+            Configuration conf = context.getConfiguration();
+            rounds = CompanionConf.stage2Rounds(conf);
+            round = CompanionConf.stage2Round(conf);
+        }
+
         @Override
         protected void map(PairKey key, LocSlotWritable value, Context context)
                 throws IOException, InterruptedException {
+            if (rounds > 1
+                    && Math.floorMod(HashUtil.mix(key.getVidA(), key.getVidB()), rounds) != round) {
+                return;
+            }
             context.write(key, value);
             context.getCounter(COUNTER_GROUP_STAGE2,
                     Stage2Counter.PAIRS_INPUT.name()).increment(1L);

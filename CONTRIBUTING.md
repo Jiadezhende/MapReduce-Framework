@@ -97,7 +97,7 @@ scripts/cluster_run.sh --days 1 --build
 
 # 查看输出（无须登录 master）
 scripts/cluster_status.sh <run_id>
-scripts/cluster_head.sh   <run_id> final 1d
+scripts/cluster_fetch.sh  <run_id> 1d
 
 # 继续用同一个 run_id 从某个 stage 往后跑
 scripts/cluster_run.sh --days 1 --run-id <run_id> --from stage2 --until stage3

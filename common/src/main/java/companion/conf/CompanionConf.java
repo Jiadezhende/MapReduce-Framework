@@ -21,6 +21,8 @@ public final class CompanionConf {
     public static final int    STAGE1_REDUCERS_DEFAULT   = 8;
     public static final int    STAGE2_REDUCERS_DEFAULT   = 8;
     public static final int    STAGE3_REDUCERS_DEFAULT   = 8;
+    public static final int    STAGE2_ROUNDS_DEFAULT     = 1;
+    public static final int    STAGE2_ROUND_DEFAULT      = 0;
     public static final int    STAGE1_SLOT_OFFSET_DEFAULT = 0;
     public static final boolean STAGE1_EMIT_WITHIN_SLOT_DEFAULT = true;
     public static final boolean STAGE1_COMPENSATION_ENABLED_DEFAULT = true;
@@ -38,6 +40,11 @@ public final class CompanionConf {
     public static final String KEY_STAGE1_REDUCERS  = "companion.stage1.reducers";
     public static final String KEY_STAGE2_REDUCERS  = "companion.stage2.reducers";
     public static final String KEY_STAGE3_REDUCERS  = "companion.stage3.reducers";
+    // Stage2 pair-hash sharding: split the run into STAGE2_ROUNDS sequential
+    // sub-jobs, each emitting only pairs whose mix(vidA,vidB) % rounds == round.
+    // Caps per-node nm-local-dir shuffle peak at 1/rounds (see docs/runs/31d-cf1f2f6-failed).
+    public static final String KEY_STAGE2_ROUNDS   = "companion.stage2.rounds";
+    public static final String KEY_STAGE2_ROUND    = "companion.stage2.round";
     public static final String KEY_STAGE1_SLOT_OFFSET = "companion.stage1.slot.offset";
     public static final String KEY_STAGE1_EMIT_WITHIN_SLOT = "companion.stage1.emit.within.slot";
     public static final String KEY_STAGE1_COMPENSATION_ENABLED = "companion.stage1.compensation.enabled";
@@ -63,6 +70,8 @@ public final class CompanionConf {
     public static int stage1Reducers(Configuration c){return c.getInt(KEY_STAGE1_REDUCERS, STAGE1_REDUCERS_DEFAULT); }
     public static int stage2Reducers(Configuration c){return c.getInt(KEY_STAGE2_REDUCERS, STAGE2_REDUCERS_DEFAULT); }
     public static int stage3Reducers(Configuration c){return c.getInt(KEY_STAGE3_REDUCERS, STAGE3_REDUCERS_DEFAULT); }
+    public static int stage2Rounds(Configuration c){return c.getInt(KEY_STAGE2_ROUNDS, STAGE2_ROUNDS_DEFAULT); }
+    public static int stage2Round(Configuration c) {return c.getInt(KEY_STAGE2_ROUND, STAGE2_ROUND_DEFAULT); }
     public static int stage1SlotOffset(Configuration c){return c.getInt(KEY_STAGE1_SLOT_OFFSET, STAGE1_SLOT_OFFSET_DEFAULT); }
     public static boolean stage1EmitWithinSlot(Configuration c) {
         return c.getBoolean(KEY_STAGE1_EMIT_WITHIN_SLOT, STAGE1_EMIT_WITHIN_SLOT_DEFAULT);

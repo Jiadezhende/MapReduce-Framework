@@ -104,6 +104,11 @@ public class Stage3SortJob extends AbstractCompanionJob {
         job.setJarByClass(Stage3SortJob.class);
 
         job.setInputFormatClass(TextInputFormat.class);
+        // Stage2 may shard its output into per-round subdirs (companions/<phase>/r{k}/)
+        // when companion.stage2.rounds > 1; recurse so the sort job reads every
+        // round's part files. Flat (single-round) layout reads identically.
+        job.getConfiguration().setBoolean(
+                "mapreduce.input.fileinputformat.input.dir.recursive", true);
         TextInputFormat.addInputPath(job, in);
 
         job.setMapperClass(SortMapper.class);

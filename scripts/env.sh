@@ -26,18 +26,34 @@
 : "${REDUCERS_7D:=32}"
 : "${REDUCERS_31D:=32}"
 
+# Stage2 pair-hash sharding (cluster_run.sh): split Stage2 into N sequential
+# sub-jobs, each emitting only 1/N of the pairs, so the per-node nm-local-dir
+# shuffle peak is capped at ~1/N. 31d's Stage2 map output (~319 GB materialized)
+# is retained for the whole job, and master only offers a 4 GB NM (2 slots) so
+# it runs ~17% of maps — the two 8 GB workers each carry ~41%, NOT a third, and
+# worker2's / volume starts heaviest. With gzip shuffle (below) + an `hdfs
+# balancer` pass first, N=3 keeps worker2's / peak ~40 GB (≈7.5 GB under the 95%
+# line); N=2 leaves only ~2.5 GB. 1d/7d fit in one pass. See docs/runs/31d-cf1f2f6-failed/.
+: "${STAGE2_ROUNDS_1D:=1}"
+: "${STAGE2_ROUNDS_7D:=1}"
+: "${STAGE2_ROUNDS_31D:=3}"
+
 # Per-phase container + spill tuning.
 # Default 7d sizing fits the 16 GB container pool; 31d needs smaller per-container
 # memory to fit more concurrent reducers into the post-master-NM 20 GB pool
-# (5 → 9 concurrent), plus a bigger map sort buffer so Stage2 nm-local-dir peak
-# stays under the 95% disk-health threshold. See docs/space-optimization.md §8.2.
+# (5 → 9 concurrent). io.sort.mb=400 cuts spill *re-write* passes but NOT the
+# shuffle *resident* peak (= total map output ÷ nodes, retained till job end) —
+# that peak is what blew worker2 past 95% on the 31d first run, so the real
+# levers are gzip shuffle codec (denser than the default Snappy) + STAGE2_ROUNDS
+# above. See docs/runs/31d-cf1f2f6-failed/ and docs/space-optimization.md §8.2.
 : "${TUNE_1D:=}"
 : "${TUNE_7D:=}"
-: "${TUNE_31D:=-D mapreduce.map.memory.mb=1536 -D mapreduce.map.java.opts=-Xmx1024m -D mapreduce.reduce.memory.mb=2048 -D mapreduce.reduce.java.opts=-Xmx1536m -D mapreduce.task.io.sort.mb=400 -D companion.hll.threshold=100000}"
+: "${TUNE_31D:=-D mapreduce.map.memory.mb=1536 -D mapreduce.map.java.opts=-Xmx1024m -D mapreduce.reduce.memory.mb=2048 -D mapreduce.reduce.java.opts=-Xmx1536m -D mapreduce.task.io.sort.mb=400 -D mapreduce.map.output.compress.codec=org.apache.hadoop.io.compress.GzipCodec -D companion.hll.threshold=100000}"
 
 export COMPANION_ROOT HADOOP_CONF_DIR HADOOP_BIN LOCAL_DATA_DIR YARN_QUEUE
 export MASTER_HOST HDFS_INPUT_ROOT HDFS_RUNS_ROOT HDFS_TEST_ROOT_BASE REMOTE_SUBMIT_BASE
 export REDUCERS_1D REDUCERS_7D REDUCERS_31D TUNE_1D TUNE_7D TUNE_31D
+export STAGE2_ROUNDS_1D STAGE2_ROUNDS_7D STAGE2_ROUNDS_31D
 
 # --- Rate-limit-safe remote command wrappers ----------------------------------
 # The master subnet rate-limits by source IP: a burst of fresh connections

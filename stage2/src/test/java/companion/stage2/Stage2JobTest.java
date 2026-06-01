@@ -20,9 +20,12 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class Stage2JobTest {
@@ -146,6 +149,60 @@ public class Stage2JobTest {
         List<String> expected = readGoldenCompanions();
         Collections.sort(expected);
         assertEquals(expected, actual);
+    }
+
+    @Test
+    public void shardingPartitionsPairsDisjointlyAndUnionMatchesSingleRound() throws Exception {
+        Path in = new Path(fixture("pair_loc_slot.seq").toURI());
+
+        List<String> round0 = runShard(in, 2, 0);
+        List<String> round1 = runShard(in, 2, 1);
+
+        // A pair's every witness shares (vidA, vidB), so each pair (and its full
+        // witness set) lands in exactly one round → the shards' pair sets are
+        // disjoint.
+        Set<String> pairs0 = pairKeys(round0);
+        Set<String> pairs1 = pairKeys(round1);
+        for (String p : pairs0) {
+            assertFalse("pair " + p + " appeared in both shards", pairs1.contains(p));
+        }
+
+        // ...and their union reproduces the unsharded golden companions exactly
+        // (same pairs, same counts — sharding is a disjoint partition, not a
+        // sample).
+        List<String> union = new ArrayList<>();
+        union.addAll(round0);
+        union.addAll(round1);
+        Collections.sort(union);
+
+        List<String> golden = readGoldenCompanions();
+        Collections.sort(golden);
+        assertEquals(golden, union);
+    }
+
+    private List<String> runShard(Path in, int rounds, int round) throws Exception {
+        Configuration conf = localConf();
+        conf.setInt(CompanionConf.KEY_K_MIN, 3);
+        conf.setInt(CompanionConf.KEY_HLL_THRESHOLD, 1_000_000);
+        conf.setInt(CompanionConf.KEY_STAGE2_ROUNDS, rounds);
+        conf.setInt(CompanionConf.KEY_STAGE2_ROUND, round);
+
+        Path out = new Path(tmp.newFolder("shard-out-" + rounds + "-" + round).toURI());
+        FileSystem fs = FileSystem.getLocal(conf);
+        fs.delete(out, true);
+
+        Job job = new Stage2Job().buildJob(conf, in, out);
+        assertTrue(job.waitForCompletion(false));
+        return readTextPartFiles(conf, out, false);
+    }
+
+    private static Set<String> pairKeys(List<String> rows) {
+        Set<String> keys = new HashSet<>();
+        for (String row : rows) {
+            String[] parts = row.split(",");
+            keys.add(parts[0] + "," + parts[1]);
+        }
+        return keys;
     }
 
     private static Configuration localConf() {

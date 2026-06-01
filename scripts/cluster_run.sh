@@ -88,9 +88,9 @@ if [[ -z "${RUN_ID}" ]]; then
 fi
 
 case "${PHASE}" in
-    1d)  RED="${REDUCERS_1D}";  TUNE="${TUNE_1D}"  ;;
-    7d)  RED="${REDUCERS_7D}";  TUNE="${TUNE_7D}"  ;;
-    31d) RED="${REDUCERS_31D}"; TUNE="${TUNE_31D}" ;;
+    1d)  RED="${REDUCERS_1D}";  TUNE="${TUNE_1D}";  S2_ROUNDS="${STAGE2_ROUNDS_1D}"  ;;
+    7d)  RED="${REDUCERS_7D}";  TUNE="${TUNE_7D}";  S2_ROUNDS="${STAGE2_ROUNDS_7D}"  ;;
+    31d) RED="${REDUCERS_31D}"; TUNE="${TUNE_31D}"; S2_ROUNDS="${STAGE2_ROUNDS_31D}" ;;
 esac
 RED_CONF="-D companion.stage0a.reducers=${RED} -D companion.stage1.reducers=${RED} -D companion.stage2.reducers=${RED} -D companion.stage3.reducers=${RED} ${TUNE}"
 
@@ -276,15 +276,33 @@ if (( FROM_IDX <= 1 && UNTIL_IDX >= 1 )); then
 fi
 
 if (( FROM_IDX <= 2 && UNTIL_IDX >= 2 )); then
-    s2_out="${HDFS_RUN_ROOT}/companions/${PHASE}"
-    if stage_done "${s2_out}"; then
-        echo "skip stage2 (already _SUCCESS)"
+    s2_base="${HDFS_RUN_ROOT}/companions/${PHASE}"
+    s2_in="${HDFS_RUN_ROOT}/pair_loc_slot/${PHASE}"
+    if (( S2_ROUNDS <= 1 )); then
+        # Single pass: flat output companions/<phase>/, unchanged layout.
+        if stage_done "${s2_base}"; then
+            echo "skip stage2 (already _SUCCESS)"
+        else
+            prepare_out "${s2_base}"
+            submit stage2 companion.stage2.Stage2Job "${s2_in}" "${s2_base}" "${RED_CONF}"
+        fi
     else
-        prepare_out "${s2_out}"
-        submit stage2 companion.stage2.Stage2Job \
-            "${HDFS_RUN_ROOT}/pair_loc_slot/${PHASE}" \
-            "${s2_out}" \
-            "${RED_CONF}"
+        # Pair-hash sharding (caps per-node shuffle peak at 1/S2_ROUNDS): K
+        # sequential sub-jobs, each into companions/<phase>/r{k}/. Each round has
+        # its own _SUCCESS so a re-run resumes at the first unfinished round.
+        # Stage3 reads them via input.dir.recursive=true.
+        for (( r = 0; r < S2_ROUNDS; r++ )); do
+            s2_out="${s2_base}/r${r}"
+            if stage_done "${s2_out}"; then
+                echo "skip stage2 round ${r}/${S2_ROUNDS} (already _SUCCESS)"
+            else
+                prepare_out "${s2_out}"
+                submit stage2 companion.stage2.Stage2Job "${s2_in}" "${s2_out}" \
+                    "${RED_CONF}" \
+                    "-D companion.stage2.rounds=${S2_ROUNDS}" \
+                    "-D companion.stage2.round=${r}"
+            fi
+        done
     fi
 fi
 

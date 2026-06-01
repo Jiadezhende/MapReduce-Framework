@@ -331,6 +331,8 @@ public static class Stage1Reducer extends Reducer<...> {
 
 ### 7.2 REQ-S2-A1：PairPartitioner 引入 salt（双轮 J2a/J2b）
 
+> **2026-06-01 降级（实测证伪前提）**：本项治"热 pair 拖尾"，但 7d 直方图（`docs/runs/7d-49d70f2/_metrics.json`）显示单 pair witness 数封顶 <1000、`hll_pair_count=0`（HLL 阈值从未触发）——**本数据没有热 pair**。31d 是 7d 时间超集，单 pair 计数最多 ~×4 到几千，仍不构成单 reducer 跑数小时的拖尾。且 J2a mapper 仍透传 → map 输出量不变，salt 只散 reducer 桶不减字节；A0 后 `(pair,loc,slot)` 全局唯一 → 局部去重去不掉一条 → 两轮反而把非热 pair 的 shuffle ~翻倍、**加重磁盘**。结论：对 31d Stage2 跑挂（见 §7.6 / `docs/runs/31d-cf1f2f6-failed/`）**无益甚至有害**，已让位于 §7.6 的"分轮 + 密编码"。仅当 31d 真实直方图出现 ≥1万 witness 的 pair 时才重估。
+
 **问题**：`PairPartitioner.getPartition` 用 `HashUtil.mix(vidA, vidB) % numPartitions`，单个热 pair 的所有 witness 必然落同一 reducer。即使 reducer 数加到 48 个，热 pair 也只占 1 个，wall-time 不会变。
 
 **改造**（推荐方案：双轮聚合）：
@@ -367,6 +369,24 @@ public static class Stage1Reducer extends Reducer<...> {
 |---|---|
 | 把 Stage1 codec 切到 Snappy | 反方向，会让 Stage1 输出涨 1.5–2× |
 | `dfs.replication` 改回 2 | 2 worker 集群 rep=2 没有容错收益，空间代价 ×2 |
+| REQ-S2-A1 salt 两轮治 31d 跑挂 | 见 §7.2 降级注：本数据无热 pair，两轮反而加重磁盘 |
+
+### 7.6 Stage2 pair-hash 分轮 + 密编码 shuffle（已落地，治 31d 跑挂）
+
+完整复盘：`docs/runs/31d-cf1f2f6-failed/report.md`。
+
+**机理（先前漏掉的关键一环）**：MapReduce 的 **map 中间输出在整个 job 结束前不会被删**（要留给 reducer 重试拉取，fetch 不释放）。所以 Stage2 单节点 nm-local-dir 峰值 = `Stage2 全部 map 输出 materialized ÷ 节点数`，**与 reduce 进度、`slowstart` 无关**。31d 实测：map output materialized ≈ 82.6G(7d) ×3.86 ≈ 319G，÷3 ≈ **106 G/节点**，而每 worker 扣 HDFS+OS 后只剩 ~40 G → 必崩。`io.sort.mb` 只减 spill 累计重写次数，减不了这个常驻峰值——所以 §8.2 当初"io.sort.mb=400 防 95%"的预期落空。
+
+**两条有效手段（都"砍每节点 map 输出字节"）**：
+
+| 手段 | 机制 | 31d/节点峰值 | 落地 |
+|---|---|---|---|
+| A. shuffle codec Snappy→Gzip(zlib) | zlib 比 Snappy 密 ~1.6–1.7× | 106→~63 G | `env.sh:TUNE_31D` 加 `mapreduce.map.output.compress.codec=GzipCodec` |
+| D. 按 `mix(vidA,vidB)%K` 分 K 轮串跑 | 每轮只 emit 1/K → shuffle /K | /K | `Stage2Mapper` round 过滤 + `STAGE2_ROUNDS_*` + `cluster_run.sh` 串轮 |
+
+**节点不是等分的**：master 仅配 4 GB NM（2 map 槽）跑 ~17% map，两个 8 GB worker 各扛 ~41%（map 输出落在跑该 map 的节点本地盘），有效节点数 ~2.4 不是 3——这是首跑 28% 就崩（非 ~45%）的原因。master 兼跑 NN+RM，不能安全调大。叠加 worker2 的 `/` 卷天生偏重，故：跑前先 `hdfs balancer` 把 worker2 匀到与 worker1 持平（实测 53%→43%，`/` 余量 12.5G→18.5G），再 **A + K=3 ⇒ worker2 `/` 峰值 ~40 G**（红线 47.5 G，留 ~7.5 G）。K=2 即便 rebalance 后也仅剩 ~2.5 G、太险。加盘不可行（每 worker 仅一块 100G 盘，VG VFree 64 MiB）。
+
+**D 的正确性**：一个 pair 的全部 witness 共享 `(vidA,vidB)` → `mix%K` 恒定 → 必落同一轮；各轮 pair 集不相交，输出直接拼接即精确结果，无需 partial 合并（比 REQ-S2-A1 简单）。各轮写 `companions/<phase>/r{k}/`，Stage3 靠 `mapreduce.input.fileinputformat.input.dir.recursive=true` 一并读取。1d/7d 维持 K=1，零影响。
 
 ---
 
@@ -380,6 +400,10 @@ ssh master "hdfs dfsadmin -report | grep -E 'DFS Remaining|Configured'"
 
 # 2. 两 worker / 卷在 60% 以下（H3 / H4 已配，但要确认数据均衡到位）
 ssh master "for h in worker1 worker2; do echo === \$h ===; ssh \$h 'df -h / /home'; done"
+
+# 2b. 若某 worker DN 明显偏重（如 worker2 > 50%），跑一次 balancer 匀平——
+#     31d Stage2 单节点峰值卡在最重 worker 的 / 卷，匀平直接买余量（实测 53%→43%）
+ssh master "hdfs dfsadmin -setBalancerBandwidth 52428800; hdfs balancer -threshold 5"
 
 # 3. 清旧 run（保留必要的，其他释放）
 ssh master "hdfs dfs -ls /companion/runs/"
@@ -403,22 +427,24 @@ scripts/cluster_run.sh --days 31 --build
 | `REDUCERS_31D=32`（在 env.sh） | 7d 的 32 已是当前并发槽位的最佳点；加到 128 只是排队 25 波，wall-time 不变 |
 | `reduce.memory.mb=2048`<br>`reduce.java.opts=-Xmx1536m` | 7d 实测 Peak Reduce Physical 600 MB，2 GB 是 3.4× 余量。reducer 内存从 4 GB 降到 2 GB，并发槽位 5 → 9（master 1 + worker1 4 + worker2 4），Stage1/2 wall-time 砍 1/3 |
 | `map.memory.mb=1536`<br>`map.java.opts=-Xmx1024m` | map 端类似下调，并发 ~10 → ~13 |
-| `task.io.sort.mb=400` | map sort buffer 从默认 100 MB 提到 400 MB，spill 次数 ~½，Stage2 期间 worker 本地盘累计写量从 297 GB（7d 数）降到 ~150 GB，关键防 worker2 `/` 撞 95% 红线 |
+| `task.io.sort.mb=400` | map sort buffer 从默认 100 MB 提到 400 MB，spill *重写*次数 ~½。**注意**：减的是累计写量，不是 shuffle 常驻峰值（= 总 map 输出 ÷ 节点，整 job 驻留）——后者才是 31d 跑挂主因，靠下两行治，见 §7.6 |
+| `map.output.compress.codec=GzipCodec`（A） | shuffle 默认 Snappy 切 zlib，materialized 密 ~1.6–1.7×，单节点常驻峰值 106→~63 G。覆盖 H5 的 Snappy 默认 |
+| `STAGE2_ROUNDS_31D=3`（在 env.sh，D） | Stage2 按 `mix(vidA,vidB)%3` 分 3 轮串跑，单节点常驻峰值再 /3。K=3 而非 2 因 master 只占 ~17% map、worker 各 ~41%（有效 ~2.4 节点），见 §7.6 / `docs/runs/31d-cf1f2f6-failed/` §4.4 |
 | `companion.hll.threshold=100000` | 防热 pair OOM（保留 7d 用法） |
 
-shuffle 压缩、Stage0/1 输出压缩已在 H5/H6 默认开，不用再传 `-D`。
+shuffle 压缩开关、Stage0/1 输出压缩已在 H5/H6 默认开；shuffle codec 由 A 覆盖为 Gzip。
 
-### 8.3 已知风险（无算法改造的前提下）
+### 8.3 已知风险
 
 | 风险 | 触发场景 | 影响 |
 |---|---|---|
-| **HDFS 撑满** | Stage1 输出 > 170 GB（增长系数 ≥ 6×）| Stage1 写不下，整 run 挂 |
-| **Stage2 热 pair 拖尾** | REQ-S2-A1 未做（§7.2） | 1 个 reducer 跑数小时，其余早完；wall-time 不可控（但不爆磁盘） |
+| ~~Stage2 shuffle 撑爆本地盘~~（已治） | 单节点 map 输出常驻 > 本地余量 | **首跑就是这个（`docs/runs/31d-cf1f2f6-failed/`）**；§7.6 的 A+D（Gzip + K=2）已压到 ~31 G，落进余量 |
+| **HDFS 撑满** | Stage1 输出 > 170 GB（增长系数 ≥ 6×）| Stage1 写不下，整 run 挂。实测 31d Stage1 仅 103.5 GB（3.86×），余量充足，风险低 |
+| **Stage2 热 pair 拖尾** | 理论项，REQ-S2-A1 未做（§7.2） | 实测无热 pair（直方图封顶 <1000 witness），本数据基本不触发 |
 | **Stage1 倾斜** | REQ-S1-A1 未做（§7.1） | 单 reducer wall-time 3–10× |
+| **Stage2 wall-time 偏长** | 分轮 K=2 串跑 + Gzip CPU 开销 | 不爆磁盘但耗时增加，可接受；跑通后再按需调 K / 评估 Zstd |
 
-如果想让 31d 跑得"既稳又快"，**优先把 REQ-S2-A1 落了**——它不直接砍存储，但 Stage2 不收敛的话 31d 整 run 时长不可预测。
-
-如果想进一步给 HDFS 留余量、降低撑满风险，**优先把 §6.4 残留项（dedup set 内存上限保护 + `PAIRS_EMITTED_RAW` probe）做了**——前者防 31d 高密度热桶把 reducer 堆打爆，后者让 A0 收益可量化对照。
+31d 跑挂的主因（本地盘）已由 §7.6 治理。若想进一步给 HDFS 留余量，**优先把 §6.4 残留项（dedup set 内存上限保护 + `PAIRS_EMITTED_RAW` probe）做了**——前者防 31d 高密度热桶把 reducer 堆打爆，后者让 A0 收益可量化对照。
 
 ---
 
