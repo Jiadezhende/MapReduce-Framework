@@ -22,13 +22,12 @@ import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 import org.apache.hadoop.util.ToolRunner;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.objects.ObjectIterator;
+
 import java.io.IOException;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 /** Stage 1: generate pair witnesses from filtered vehicle records. */
 public class Stage1Job extends AbstractCompanionJob {
@@ -41,7 +40,11 @@ public class Stage1Job extends AbstractCompanionJob {
         PAIRS_EMITTED,
         CROSS_SLOT_PAIRS,
         SKEW_DROP,
-        HOT_LOCS_SLICED
+        HOT_LOCS_SLICED,
+        DELTAT_LT_SLOTSIZE,
+        MAX_GROUP_RECORDS,
+        MAX_GROUP_DISTINCT_VIDS,
+        CROSS_SLOT_SKIPPED_BY_OVERLAP
     }
 
     @Override
@@ -217,32 +220,50 @@ public class Stage1Job extends AbstractCompanionJob {
         }
     }
 
+    /**
+     * Reducer that aggregates records of a (loc, slot) group into a vid → ts-list
+     * map, then enumerates distinct vid pairs and emits a witness whenever any
+     * ts pair falls within deltaT. Does not maintain a cross-emit dedup set:
+     * Stage2's reducer absorbs duplicate (pair, loc, slot) tuples via its
+     * {@code HashSet<Long> exactWitnesses}, so any duplicates here only cost
+     * shuffle volume, not correctness.
+     */
     public static class Stage1Reducer
             extends Reducer<CompositeKey, RecordWritable, PairKey, LocSlotWritable> {
 
-        private final Deque<SeenRecord> window = new ArrayDeque<>();
-        private final List<SeenRecord> tailBuffer = new ArrayList<>();
-        // Deduplicate witnesses inside one reducer group, whose grouping key is exactly
-        // (loc, slot). Stage 2 only counts distinct (loc, slot) per pair, so emitting the
-        // same pair more than once from this group only inflates HDFS/shuffle volume.
-        private final Set<Long> emittedPairs = new HashSet<>();
+        private final Int2ObjectOpenHashMap<IntArrayList> currentVidToTs = new Int2ObjectOpenHashMap<>();
+        private final Int2ObjectOpenHashMap<IntArrayList> tailVidToTs = new Int2ObjectOpenHashMap<>();
         private final PairKey outKey = new PairKey();
         private final LocSlotWritable outValue = new LocSlotWritable();
 
         private int deltaT;
+        private int slotSize;
         private int locSkewCap;
         private int slotOffset;
         private boolean emitWithinSlot;
         private int lastLoc = Integer.MIN_VALUE;
         private int lastSlot = Integer.MIN_VALUE;
 
+        // Per-reducer max counters; Hadoop counters only support increment, so we
+        // track local maxima and emit once in cleanup via setValue.
+        private long maxGroupRecords = 0L;
+        private long maxGroupDistinctVids = 0L;
+
         @Override
         protected void setup(Context context) {
             Configuration conf = context.getConfiguration();
             deltaT = CompanionConf.deltaT(conf);
+            slotSize = CompanionConf.slotSize(conf);
             locSkewCap = CompanionConf.locSkewCap(conf);
             slotOffset = Math.floorMod(CompanionConf.stage1SlotOffset(conf), 2);
             emitWithinSlot = CompanionConf.stage1EmitWithinSlot(conf);
+
+            if (deltaT < slotSize) {
+                // Invariant assumed by the cross-slot overlap-skip below is violated.
+                // We don't fail — Stage2 still dedupes — but flag so we can spot it.
+                context.getCounter(COUNTER_GROUP_STAGE1,
+                        Stage1Counter.DELTAT_LT_SLOTSIZE.name()).increment(1L);
+            }
         }
 
         @Override
@@ -253,23 +274,17 @@ public class Stage1Job extends AbstractCompanionJob {
             boolean canUseTail = loc == lastLoc && slot == lastSlot + 1
                     && Math.floorMod(lastSlot + slotOffset, 2) == 0;
             if (!canUseTail) {
-                tailBuffer.clear();
+                tailVidToTs.clear();
             }
+            currentVidToTs.clear();
 
-            window.clear();
-            emittedPairs.clear();
+            // Pass 1: bucket records by vid. Inputs arrive sorted by tNorm
+            // (CompositeKey.FullKeyComparator), so each per-vid IntArrayList is
+            // appended in ascending order — the two-pointer scan below requires this.
+            int totalRecords = 0;
             boolean hotCounterEmitted = false;
-            List<SeenRecord> currentRecords = new ArrayList<>();
-
             for (RecordWritable value : values) {
-                SeenRecord cur = new SeenRecord(value.getVid(), value.getTNorm());
-                emitCrossSlotPairs(loc, slot, cur, canUseTail, context);
-                pruneWindow(cur);
-                if (emitWithinSlot) {
-                    emitWithinSlotPairs(loc, slot, cur, context);
-                }
-
-                if (window.size() >= locSkewCap) {
+                if (totalRecords >= locSkewCap) {
                     context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.SKEW_DROP.name()).increment(1L);
                     if (!hotCounterEmitted) {
                         context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.HOT_LOCS_SLICED.name()).increment(1L);
@@ -277,88 +292,174 @@ public class Stage1Job extends AbstractCompanionJob {
                     }
                     continue;
                 }
-                window.addLast(cur);
-                currentRecords.add(cur);
+                int vid = value.getVid();
+                int tNorm = value.getTNorm();
+                IntArrayList tsList = currentVidToTs.get(vid);
+                if (tsList == null) {
+                    tsList = new IntArrayList(2);
+                    currentVidToTs.put(vid, tsList);
+                }
+                tsList.add(tNorm);
+                totalRecords++;
             }
 
-            rebuildTailBuffer(currentRecords);
+            if (totalRecords > maxGroupRecords) {
+                maxGroupRecords = totalRecords;
+            }
+            if (currentVidToTs.size() > maxGroupDistinctVids) {
+                maxGroupDistinctVids = currentVidToTs.size();
+            }
+
+            if (emitWithinSlot) {
+                emitWithinSlotPairs(loc, slot, context);
+            }
+            if (canUseTail) {
+                emitCrossSlotPairs(loc, slot, context);
+            }
+
+            rebuildTailBuffer();
             lastLoc = loc;
             lastSlot = slot;
         }
 
-        private void emitCrossSlotPairs(int loc, int slot, SeenRecord cur, boolean canUseTail,
-                                        Context context)
+        @Override
+        protected void cleanup(Context context) {
+            context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.MAX_GROUP_RECORDS.name())
+                    .setValue(maxGroupRecords);
+            context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.MAX_GROUP_DISTINCT_VIDS.name())
+                    .setValue(maxGroupDistinctVids);
+        }
+
+        private void emitWithinSlotPairs(int loc, int slot, Context context)
                 throws IOException, InterruptedException {
-            if (!canUseTail) {
-                return;
+            // Symmetric enumeration over distinct vids in the current group.
+            // Order doesn't matter — emitPair normalizes vidA<vidB internally.
+            int[] vids = currentVidToTs.keySet().toIntArray();
+            for (int i = 0; i < vids.length; i++) {
+                IntArrayList tsA = currentVidToTs.get(vids[i]);
+                for (int j = i + 1; j < vids.length; j++) {
+                    IntArrayList tsB = currentVidToTs.get(vids[j]);
+                    if (anyTsWithinDeltaT(tsA, tsB)) {
+                        emitPair(vids[i], vids[j], loc, slot, context);
+                    }
+                }
             }
-            for (SeenRecord prev : tailBuffer) {
-                if (cur.ts - prev.ts > deltaT) {
+        }
+
+        private void emitCrossSlotPairs(int loc, int slot, Context context)
+                throws IOException, InterruptedException {
+            // Iterate tail × current. Tail ts < current ts (different slots, sorted
+            // input), so anyTsWithinDeltaT with abs() is equivalent to the original
+            // single-sided cur.ts - prev.ts <= deltaT check.
+            ObjectIterator<Int2ObjectMap.Entry<IntArrayList>> tailIt =
+                    tailVidToTs.int2ObjectEntrySet().fastIterator();
+            while (tailIt.hasNext()) {
+                Int2ObjectMap.Entry<IntArrayList> tailEntry = tailIt.next();
+                int vidTail = tailEntry.getIntKey();
+
+                // Invariant: companion.delta.t >= companion.slot.size. Two records in
+                // the same slot are at most slotSize apart, so when vidTail also lives
+                // in currentVidToTs, the within-slot pass above will have already
+                // emitted every (vidTail, vidCur) pair that could match. Skipping here
+                // avoids a guaranteed duplicate. If the invariant is violated, the
+                // DELTAT_LT_SLOTSIZE counter fires in setup; Stage2's HashSet still
+                // absorbs duplicates correctly.
+                if (currentVidToTs.containsKey(vidTail)) {
+                    context.getCounter(COUNTER_GROUP_STAGE1,
+                            Stage1Counter.CROSS_SLOT_SKIPPED_BY_OVERLAP.name()).increment(1L);
                     continue;
                 }
-                if (emitPair(prev.vid, cur.vid, loc, slot, context)) {
-                    context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.CROSS_SLOT_PAIRS.name()).increment(1L);
+
+                IntArrayList tsTail = tailEntry.getValue();
+                ObjectIterator<Int2ObjectMap.Entry<IntArrayList>> curIt =
+                        currentVidToTs.int2ObjectEntrySet().fastIterator();
+                while (curIt.hasNext()) {
+                    Int2ObjectMap.Entry<IntArrayList> curEntry = curIt.next();
+                    if (anyTsWithinDeltaT(tsTail, curEntry.getValue())) {
+                        emitPair(vidTail, curEntry.getIntKey(), loc, slot, context);
+                        context.getCounter(COUNTER_GROUP_STAGE1,
+                                Stage1Counter.CROSS_SLOT_PAIRS.name()).increment(1L);
+                    }
                 }
             }
         }
 
-        private void emitWithinSlotPairs(int loc, int slot, SeenRecord cur, Context context)
-                throws IOException, InterruptedException {
-            for (SeenRecord prev : window) {
-                emitPair(prev.vid, cur.vid, loc, slot, context);
+        /**
+         * Two-pointer scan over two ascending ts lists. Returns true on the first
+         * pair within deltaT. Worst case O(|a| + |b|).
+         */
+        private boolean anyTsWithinDeltaT(IntArrayList a, IntArrayList b) {
+            int sizeA = a.size();
+            int sizeB = b.size();
+            int i = 0;
+            int j = 0;
+            while (i < sizeA && j < sizeB) {
+                int diff = a.getInt(i) - b.getInt(j);
+                if (Math.abs(diff) <= deltaT) {
+                    return true;
+                }
+                if (diff < 0) {
+                    i++;
+                } else {
+                    j++;
+                }
             }
+            return false;
         }
 
-        private void pruneWindow(SeenRecord cur) {
-            while (!window.isEmpty() && window.peekFirst().ts < cur.ts - deltaT) {
-                window.pollFirst();
-            }
-        }
-
-        private boolean emitPair(int vid1, int vid2, int loc, int slot, Context context)
+        private void emitPair(int vid1, int vid2, int loc, int slot, Context context)
                 throws IOException, InterruptedException {
             if (vid1 == vid2) {
-                return false;
-            }
-            int vidA = Math.min(vid1, vid2);
-            int vidB = Math.max(vid1, vid2);
-            long pair = encodePair(vidA, vidB);
-            if (!emittedPairs.add(pair)) {
-                return false;
+                return;
             }
             outKey.set(vid1, vid2);
             outValue.set(loc, slot);
             context.write(outKey, outValue);
             context.getCounter(COUNTER_GROUP_STAGE1, Stage1Counter.PAIRS_EMITTED.name()).increment(1L);
-            return true;
         }
 
-        private static long encodePair(int vidA, int vidB) {
-            return ((long) vidA << 32) ^ (vidB & 0xffffffffL);
-        }
-
-        private void rebuildTailBuffer(List<SeenRecord> currentRecords) {
-            tailBuffer.clear();
-            if (currentRecords.isEmpty()) {
+        /**
+         * Move records with ts ≥ maxTs - deltaT from currentVidToTs into tailVidToTs.
+         * With the typical deltaT >= slotSize config, this keeps the whole current
+         * group as the tail for the next slot.
+         */
+        private void rebuildTailBuffer() {
+            tailVidToTs.clear();
+            if (currentVidToTs.isEmpty()) {
                 return;
             }
-            int maxTs = currentRecords.get(currentRecords.size() - 1).ts;
-            int minTailTs = maxTs - deltaT;
-            for (SeenRecord record : currentRecords) {
-                if (record.ts >= minTailTs) {
-                    tailBuffer.add(record);
+            int maxTs = Integer.MIN_VALUE;
+            ObjectIterator<Int2ObjectMap.Entry<IntArrayList>> scan =
+                    currentVidToTs.int2ObjectEntrySet().fastIterator();
+            while (scan.hasNext()) {
+                IntArrayList ts = scan.next().getValue();
+                int last = ts.getInt(ts.size() - 1);
+                if (last > maxTs) {
+                    maxTs = last;
                 }
             }
-        }
-    }
+            int minTailTs = maxTs - deltaT;
 
-    private static final class SeenRecord {
-        private final int vid;
-        private final int ts;
-
-        private SeenRecord(int vid, int ts) {
-            this.vid = vid;
-            this.ts = ts;
+            ObjectIterator<Int2ObjectMap.Entry<IntArrayList>> it =
+                    currentVidToTs.int2ObjectEntrySet().fastIterator();
+            while (it.hasNext()) {
+                Int2ObjectMap.Entry<IntArrayList> e = it.next();
+                IntArrayList src = e.getValue();
+                IntArrayList kept = null;
+                int sz = src.size();
+                for (int idx = 0; idx < sz; idx++) {
+                    int t = src.getInt(idx);
+                    if (t >= minTailTs) {
+                        if (kept == null) {
+                            kept = new IntArrayList(sz - idx);
+                        }
+                        kept.add(t);
+                    }
+                }
+                if (kept != null) {
+                    tailVidToTs.put(e.getIntKey(), kept);
+                }
+            }
         }
     }
 

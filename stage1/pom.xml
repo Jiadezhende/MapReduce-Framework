@@ -25,6 +25,10 @@
             <artifactId>hadoop-client</artifactId>
         </dependency>
         <dependency>
+            <groupId>it.unimi.dsi</groupId>
+            <artifactId>fastutil-core</artifactId>
+        </dependency>
+        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
         </dependency>
@@ -46,6 +50,7 @@
                             <artifactSet>
                                 <includes>
                                     <include>companion:common</include>
+                                    <include>it.unimi.dsi:fastutil-core</include>
                                 </includes>
                             </artifactSet>
                         </configuration>

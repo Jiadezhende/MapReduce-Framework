@@ -27,6 +27,7 @@
         <hadoop.version>3.3.6</hadoop.version>
         <junit.version>4.13.2</junit.version>
         <slf4j.version>1.7.36</slf4j.version>
+        <fastutil.version>8.5.13</fastutil.version>
     </properties>
 
     <dependencyManagement>
@@ -72,6 +73,11 @@
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
                 <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>it.unimi.dsi</groupId>
+                <artifactId>fastutil-core</artifactId>
+                <version>${fastutil.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
