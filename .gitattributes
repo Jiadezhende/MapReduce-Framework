@@ -1,0 +1,9 @@
+# Text fixtures and golden files are compared byte-for-byte against output
+# produced on Linux/Hadoop (LF). Pin them to LF so a Windows checkout with
+# core.autocrlf=true doesn't rewrite them to CRLF and break cluster_test.sh /
+# the local golden tests. .seq fixtures are binary and unaffected anyway.
+tests/data/**/*.csv text eol=lf
+tests/data/*.csv     text eol=lf
+
+# Shell scripts run on the master via ssh; keep them LF everywhere.
+*.sh text eol=lf

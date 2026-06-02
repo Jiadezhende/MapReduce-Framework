@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------------------
+# Single-node daemon heap sizing — APPEND these lines to
+# $HADOOP_HOME/etc/hadoop/hadoop-env.sh on the server.
+#
+# All five daemons co-locate on one 64G host. These heaps total ~11G, sitting
+# inside the ~16G reserved outside the 48G YARN container pool
+# (see deploy/single-node/yarn-site.xml). Adjust only if `jps`/GC logs show
+# pressure on the NameNode (grows with HDFS file/block count).
+#
+# Required: JAVA_HOME must point at a JDK 8 install (project is pinned to 1.8).
+# ---------------------------------------------------------------------------
+
+export JAVA_HOME=__JAVA8_HOME__          # e.g. /opt/module/jdk1.8.0_xxx
+
+# Daemon logs default to $HADOOP_HOME/logs, which sits on the SYSTEM disk (~40G).
+# A long 31d run grows NM/RM logs and can fill `/` → push them onto the data disk.
+export HADOOP_LOG_DIR=__HDFS_VOL__/logs
+
+# NameNode — heap grows with #files/#blocks; largest of the five.
+export HDFS_NAMENODE_OPTS="-Xmx4g ${HDFS_NAMENODE_OPTS:-}"
+# SecondaryNameNode — checkpointing, mirror NN-ish.
+export HDFS_SECONDARYNAMENODE_OPTS="-Xmx2g ${HDFS_SECONDARYNAMENODE_OPTS:-}"
+# DataNode — block reports + transfer buffers.
+export HDFS_DATANODE_OPTS="-Xmx2g ${HDFS_DATANODE_OPTS:-}"
+# ResourceManager — scheduler state for the single NM.
+export YARN_RESOURCEMANAGER_OPTS="-Xmx2g ${YARN_RESOURCEMANAGER_OPTS:-}"
+# NodeManager — container bookkeeping (NOT container heaps; those come from YARN).
+export YARN_NODEMANAGER_OPTS="-Xmx2g ${YARN_NODEMANAGER_OPTS:-}"
+# JobHistoryServer.
+export MAPRED_HISTORYSERVER_OPTS="-Xmx1g ${MAPRED_HISTORYSERVER_OPTS:-}"

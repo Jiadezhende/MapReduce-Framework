@@ -9,7 +9,10 @@
 
 # Non-login submit: every cluster operation goes through `ssh ${MASTER_HOST}`.
 # Override MASTER_HOST in ~/.ssh/config or via env if your alias differs.
-: "${MASTER_HOST:=master}"
+# Single-node deploy: this one host runs every Hadoop role (NN/DN/RM/NM/JHS);
+# point the `master` ssh alias (or MASTER_HOST) at that server — nothing else
+# in the submit flow changes. See docs/single-node-deploy.md.
+: "${MASTER_HOST:=speed}"
 : "${HDFS_INPUT_ROOT:=${COMPANION_ROOT}/input/raw}"
 # Single /companion tree: prod runs under runs/<run_id>, isolation tests under
 # test/<stage>-<ts>. run_id/timestamp provide isolation, so no per-user segment.
@@ -21,38 +24,70 @@
 # Submit-side knobs. Override in a per-user wrapper if needed.
 # A single per-phase reducer count drives stage0a/1/2/3 in cluster_run.sh —
 # scale-by-data-volume, not per-stage. cluster_test.sh has its own --reducers.
+#
+# Single-node sizing (32c/64G/500G): the NM offers ~28 vcores (see
+# deploy/single-node/yarn-site.xml), so reducer counts are capped to leave
+# headroom for the AM + concurrent maps. More reducers than the vcore pool only
+# adds spill files without extra parallelism.
 : "${YARN_QUEUE:=default}"
 : "${REDUCERS_1D:=8}"
-: "${REDUCERS_7D:=32}"
-: "${REDUCERS_31D:=32}"
+: "${REDUCERS_7D:=24}"
+: "${REDUCERS_31D:=24}"
 
-# Stage2 pair-hash sharding (cluster_run.sh): split Stage2 into N sequential
-# sub-jobs, each emitting only 1/N of the pairs, so the per-node nm-local-dir
-# shuffle peak is capped at ~1/N. 31d's Stage2 map output (~319 GB materialized)
-# is retained for the whole job, and master only offers a 4 GB NM (2 slots) so
-# it runs ~17% of maps — the two 8 GB workers each carry ~41%, NOT a third, and
-# worker2's / volume starts heaviest. With gzip shuffle (below) + an `hdfs
-# balancer` pass first, N=3 keeps worker2's / peak ~40 GB (≈7.5 GB under the 95%
-# line); N=2 leaves only ~2.5 GB. 1d/7d fit in one pass. See docs/runs/31d-cf1f2f6-failed/.
+# Stage2 pair-hash sharding (cluster_run.sh): split Stage2 into K sequential
+# sub-jobs, each emitting only 1/K of the pairs, so the nm-local-dir shuffle
+# RESIDENT peak is capped at ~1/K of the single-pass map output.
+#
+# Sizing is grounded in the MEASURED 31d run docs/runs/31d-cf1f2f6-k3gzip/:
+#   - single-pass Stage2 map output ≈ 319 GB (gzip), and it stays RESIDENT until
+#     that round's _SUCCESS — it does NOT drain as reduce progresses (§2.1), so
+#     io.sort.mb / slowstart do NOT move this peak; only K and the gzip codec do.
+#   - single-node (N=1, one node carries it all) shuffle peak
+#       ≈ 320 / (N=1 × K) × 1.3        (×1.3 = skew + reduce scratch)
+#     → K=2 ≈ 208 GB, K=3 ≈ 139 GB, K=4 ≈ 104 GB.
+#   - HDFS /companion is only ~118 GB total (pair_loc_slot 103.5 GB dominates),
+#     and EVERY round re-reads that 103.5 GB input. So a bigger K buys a lower
+#     peak at the cost of K×103.5 GB redundant reads + near-linear wall-time:
+#     the report shows K=6 ≈ 2× the runtime of K=3 for NO benefit → do NOT
+#     over-shard. K=6 was wrong; K=3 is the single-node default.
+#
+# With a dedicated ~300 GB shuffle disk: K=3 sits at ~46% (rock solid), K=2 at
+# ~69% (faster, one fewer input re-read). Default K=3; drop to 2 to speed up once
+# a run shows the shuffle disk staying cool. 7d single-pass map output is only
+# ~83 GB → peak ~107 GB at K=1, fits one pass. See docs/single-node-deploy.md §5.
 : "${STAGE2_ROUNDS_1D:=1}"
 : "${STAGE2_ROUNDS_7D:=1}"
 : "${STAGE2_ROUNDS_31D:=3}"
 
 # Per-phase container + spill tuning.
-# Default 7d sizing fits the 16 GB container pool; 31d needs smaller per-container
-# memory to fit more concurrent reducers into the post-master-NM 20 GB pool
-# (5 → 9 concurrent). io.sort.mb=400 cuts spill *re-write* passes but NOT the
-# shuffle *resident* peak (= total map output ÷ nodes, retained till job end) —
-# that peak is what blew worker2 past 95% on the 31d first run, so the real
-# levers are gzip shuffle codec (denser than the default Snappy) + STAGE2_ROUNDS
-# above. See docs/runs/31d-cf1f2f6-failed/ and docs/space-optimization.md §8.2.
+# On the single 32c/64G node the NM pool is ~48 GB / 28 vcores (see
+# deploy/single-node/yarn-site.xml), so vcores — not memory — is the concurrency
+# limiter. That lets us use *larger* containers (map 2 GB / reduce 3 GB) and a
+# bigger map sort buffer to cut spill *re-write* passes, while still filling all
+# 28 vcores. io.sort.mb does NOT shrink the shuffle *resident* peak (= total map
+# output, retained till job end) — that peak is controlled by the gzip shuffle
+# codec (denser than default Snappy) + STAGE2_ROUNDS above, which are the real
+# disk levers. See docs/single-node-deploy.md and docs/space-optimization.md §8.2.
 : "${TUNE_1D:=}"
-: "${TUNE_7D:=}"
-: "${TUNE_31D:=-D mapreduce.map.memory.mb=1536 -D mapreduce.map.java.opts=-Xmx1024m -D mapreduce.reduce.memory.mb=2048 -D mapreduce.reduce.java.opts=-Xmx1536m -D mapreduce.task.io.sort.mb=400 -D mapreduce.map.output.compress.codec=org.apache.hadoop.io.compress.GzipCodec -D companion.hll.threshold=100000}"
+: "${TUNE_7D:=-D mapreduce.task.io.sort.mb=256}"
+: "${TUNE_31D:=-D mapreduce.map.memory.mb=2048 -D mapreduce.map.java.opts=-Xmx1536m -D mapreduce.reduce.memory.mb=3072 -D mapreduce.reduce.java.opts=-Xmx2560m -D mapreduce.task.io.sort.mb=512 -D mapreduce.map.output.compress.codec=org.apache.hadoop.io.compress.GzipCodec -D companion.hll.threshold=100000}"
+
+# Final HDFS-output gzip for the two disk-heavy stages only: stage2 companions
+# (folded witnesses) + stage3 sorted companions.csv. This is the FINAL output
+# codec (mapreduce.output.fileoutputformat.compress) — distinct from the
+# map-output/shuffle codec in TUNE_* above. Text gzips ~4–5×, keeping the
+# stage2-output + stage3-sorted-copy peak well under HDFS free space.
+#
+# Applied to stage2/stage3 ONLY (see cluster_run.sh), NOT stage0a/stage1:
+# stage1's pair_loc_slot is stage2's INPUT, and gzip is non-splittable — gzipping
+# it would force one map per file and collapse stage2 parallelism. Stage2 emits
+# one .gz part per reducer (K×reducers files), so stage3 still gets plenty of
+# splittable units; TextInputFormat auto-decompresses .gz transparently.
+: "${OUT_COMPRESS:=-D mapreduce.output.fileoutputformat.compress=true -D mapreduce.output.fileoutputformat.compress.codec=org.apache.hadoop.io.compress.GzipCodec}"
 
 export COMPANION_ROOT HADOOP_CONF_DIR HADOOP_BIN LOCAL_DATA_DIR YARN_QUEUE
 export MASTER_HOST HDFS_INPUT_ROOT HDFS_RUNS_ROOT HDFS_TEST_ROOT_BASE REMOTE_SUBMIT_BASE
-export REDUCERS_1D REDUCERS_7D REDUCERS_31D TUNE_1D TUNE_7D TUNE_31D
+export REDUCERS_1D REDUCERS_7D REDUCERS_31D TUNE_1D TUNE_7D TUNE_31D OUT_COMPRESS
 export STAGE2_ROUNDS_1D STAGE2_ROUNDS_7D STAGE2_ROUNDS_31D
 
 # --- Rate-limit-safe remote command wrappers ----------------------------------
@@ -67,6 +102,10 @@ export STAGE2_ROUNDS_1D STAGE2_ROUNDS_7D STAGE2_ROUNDS_31D
 # Tunable via env. SSH_THROTTLE_SECS spaces successive connections; the observed
 # ban clears in ~5 min, so the retry budget (waits × retries) is sized to ride
 # one ban out.
+#
+# Single-node deploy: if the new server does NOT rate-limit by source IP, set
+# `export SSH_THROTTLE_SECS=0.2` (or 0) to speed up jar staging. The wrappers and
+# the launch flow are unchanged either way — only the spacing shrinks.
 : "${SSH_THROTTLE_SECS:=1.5}"
 : "${SSH_MAX_RETRIES:=6}"
 : "${SSH_BAN_WAIT_SECS:=120}"

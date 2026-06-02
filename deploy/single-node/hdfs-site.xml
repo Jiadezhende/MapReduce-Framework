@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Single-node Hadoop 3.3.6 — hdfs-site.xml
+  Placeholders:
+    __HDFS_VOL__     mount point of the HDFS disk (e.g. /data/hdfs)
+    __SERVER_HOST__  this server's hostname
+  See docs/single-node-deploy.md.
+-->
+<configuration>
+  <!-- One DataNode → replication MUST be 1. Anything higher cannot be satisfied
+       and just wastes the bytes; rep=1 also halves disk vs the old rep=2. -->
+  <property>
+    <name>dfs.replication</name>
+    <value>1</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.name.dir</name>
+    <value>__HDFS_VOL__/dfs/name</value>
+  </property>
+  <property>
+    <name>dfs.datanode.data.dir</name>
+    <value>__HDFS_VOL__/dfs/data</value>
+  </property>
+
+  <!-- Reserve 20 GB so a runaway Stage1/Stage2 cannot fill the volume to 100%
+       and wedge the DataNode. Critical on a tight ~500G single disk. -->
+  <property>
+    <name>dfs.datanode.du.reserved</name>
+    <value>21474836480</value>
+  </property>
+
+  <!-- 128 MB blocks: 31d input (5.8 GB) → ~46 blocks, plenty of map parallelism
+       without inflating NN metadata. -->
+  <property>
+    <name>dfs.blocksize</name>
+    <value>134217728</value>
+  </property>
+
+  <!-- Single node: no point checking remote permissions; leave on for parity
+       with cluster but disable the SNN HTTP bind clashes by sharing the host. -->
+  <property>
+    <name>dfs.namenode.secondary.http-address</name>
+    <value>__SERVER_HOST__:9868</value>
+  </property>
+</configuration>

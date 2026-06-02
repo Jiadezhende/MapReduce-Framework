@@ -284,7 +284,7 @@ if (( FROM_IDX <= 2 && UNTIL_IDX >= 2 )); then
             echo "skip stage2 (already _SUCCESS)"
         else
             prepare_out "${s2_base}"
-            submit stage2 companion.stage2.Stage2Job "${s2_in}" "${s2_base}" "${RED_CONF}"
+            submit stage2 companion.stage2.Stage2Job "${s2_in}" "${s2_base}" "${RED_CONF}" "${OUT_COMPRESS}"
         fi
     else
         # Pair-hash sharding (caps per-node shuffle peak at 1/S2_ROUNDS): K
@@ -299,6 +299,7 @@ if (( FROM_IDX <= 2 && UNTIL_IDX >= 2 )); then
                 prepare_out "${s2_out}"
                 submit stage2 companion.stage2.Stage2Job "${s2_in}" "${s2_out}" \
                     "${RED_CONF}" \
+                    "${OUT_COMPRESS}" \
                     "-D companion.stage2.rounds=${S2_ROUNDS}" \
                     "-D companion.stage2.round=${r}"
             fi
@@ -315,7 +316,8 @@ if (( FROM_IDX <= 3 && UNTIL_IDX >= 3 )); then
         submit stage3 companion.stage3.Stage3SortJob \
             "${HDFS_RUN_ROOT}/companions/${PHASE}" \
             "${s3_out}" \
-            "${RED_CONF}"
+            "${RED_CONF}" \
+            "${OUT_COMPRESS}"
     fi
 fi
 

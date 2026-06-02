@@ -1,0 +1,4 @@
+# $HADOOP_HOME/etc/hadoop/workers — one DataNode/NodeManager: this host itself.
+# Replace with the server's hostname (or leave localhost if the host resolves it
+# and ssh localhost is passwordless). One line, no extras.
+localhost

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Single-node Hadoop 3.3.6 — mapred-site.xml
+  Per-phase container sizes are NOT pinned here — scripts/env.sh injects
+  TUNE_1D/7D/31D via -D at submit time and those win. These are only the
+  framework wiring + sane defaults.
+
+  Placeholders:
+    __SERVER_HOST__   this server's hostname
+    __HADOOP_HOME__   Hadoop install dir on this server (e.g. /opt/module/hadoop-3.3.6)
+  See docs/single-node-deploy.md.
+-->
+<configuration>
+  <property>
+    <name>mapreduce.framework.name</name>
+    <value>yarn</value>
+  </property>
+
+  <!-- Without HADOOP_MAPRED_HOME exported into the containers, AM/map/reduce
+       JVMs fail to find the mapreduce classpath. Required on a fresh install. -->
+  <property>
+    <name>yarn.app.mapreduce.am.env</name>
+    <value>HADOOP_MAPRED_HOME=__HADOOP_HOME__</value>
+  </property>
+  <property>
+    <name>mapreduce.map.env</name>
+    <value>HADOOP_MAPRED_HOME=__HADOOP_HOME__</value>
+  </property>
+  <property>
+    <name>mapreduce.reduce.env</name>
+    <value>HADOOP_MAPRED_HOME=__HADOOP_HOME__</value>
+  </property>
+
+  <!-- JobHistory (Stage3 metrics + post-mortem counters read from here). -->
+  <property>
+    <name>mapreduce.jobhistory.address</name>
+    <value>__SERVER_HOST__:10020</value>
+  </property>
+  <property>
+    <name>mapreduce.jobhistory.webapp.address</name>
+    <value>__SERVER_HOST__:19888</value>
+  </property>
+
+  <!-- Default container sizes (overridden by env.sh TUNE_* per phase). -->
+  <property>
+    <name>mapreduce.map.memory.mb</name>
+    <value>2048</value>
+  </property>
+  <property>
+    <name>mapreduce.reduce.memory.mb</name>
+    <value>3072</value>
+  </property>
+
+  <!-- Map-output (shuffle) compression on by default; TUNE_31D swaps the codec
+       to Gzip for a denser on-disk shuffle to fit the single disk. -->
+  <property>
+    <name>mapreduce.map.output.compress</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>mapreduce.map.output.compress.codec</name>
+    <value>org.apache.hadoop.io.compress.SnappyCodec</value>
+  </property>
+
+  <!-- Start reducers only when maps are nearly done: avoids reducer slots
+       sitting idle (and holding shuffle space) through the long map phase. -->
+  <property>
+    <name>mapreduce.job.reduce.slowstart.completedmaps</name>
+    <value>0.9</value>
+  </property>
+</configuration>

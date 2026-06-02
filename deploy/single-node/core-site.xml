@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Single-node Hadoop 3.3.6 — core-site.xml
+  One server (32c / 64G / ~500G) hosts every role (NN/DN/RM/NM/JHS).
+
+  Placeholders to substitute before copying to $HADOOP_HOME/etc/hadoop/:
+    __SERVER_HOST__   this server's hostname (must resolve to itself; e.g. `hostname`)
+    __HDFS_VOL__      mount point of the HDFS disk (e.g. /data/hdfs); single-disk: = data vol
+    __SHUFFLE_VOL__   mount point of the shuffle disk (e.g. /data/shuffle); single-disk: = data vol
+  See docs/single-node-deploy.md.
+-->
+<configuration>
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://__SERVER_HOST__:9000</value>
+  </property>
+
+  <!-- Base scratch dir; NN/DN/tmp default under here unless overridden in hdfs-site.
+       Keep on the HDFS disk (small, metadata-ish). -->
+  <property>
+    <name>hadoop.tmp.dir</name>
+    <value>__HDFS_VOL__/tmp</value>
+  </property>
+
+  <!-- Make Gzip (dense, for HDFS) and Snappy (light, for shuffle) both available. -->
+  <property>
+    <name>io.compression.codecs</name>
+    <value>org.apache.hadoop.io.compress.GzipCodec,org.apache.hadoop.io.compress.DefaultCodec,org.apache.hadoop.io.compress.SnappyCodec,org.apache.hadoop.io.compress.BZip2Codec</value>
+  </property>
+
+  <!-- Trash off: cluster_run.sh deletes stale outputs with -skipTrash; keeping
+       trash on a tight disk just hoards space. -->
+  <property>
+    <name>fs.trash.interval</name>
+    <value>0</value>
+  </property>
+</configuration>

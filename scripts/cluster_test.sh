@@ -53,6 +53,14 @@ MINI_CSV="${LOCAL_DATA_DIR}/tests/data/mini.csv"
 # Production Stage1Job still ships the (loc, slot/2) partition design, so this compare is
 # EXPECTED-FAIL until J1b lands. See docs/stage1-boundary-gap.md and docs/reference-semantics.md.
 # Now fixed.
+# NOTE stage2: this is a SINGLE-PASS isolation test (companion.stage2.rounds=1, the default).
+# It asserts Stage2Job output == golden companions.csv byte-for-byte (as a set). Do NOT pass
+# `-D companion.stage2.rounds=K` (K>1) here: pair-hash sharding makes one sub-job emit only the
+# ~1/K of pairs whose mix(vidA,vidB)%K==round, so a single submission yields a strict subset and
+# this diff FAILS spuriously. The K-round sharded path belongs to cluster_run.sh, which runs K
+# sequential sub-jobs into companions/<phase>/r{k}/ and unions them (Stage3 reads recursively).
+# That disjoint-partition union == single-pass equivalence is covered by Stage2JobTest's
+# shardingPartitionsPairsDisjointlyAndUnionMatchesSingleRound.
 case "${STAGE}" in
     stage0) MODULE=stage0; GOLDEN="filtered.seq";       DECODE=text; COMPARE=multiset ;;
     stage1) MODULE=stage1; GOLDEN="pair_loc_slot.seq";  DECODE=text; COMPARE=set ;;
@@ -162,6 +170,8 @@ case "${STAGE}" in
         submit companion.stage1.Stage1Job \
             "${HDFS_TEST_ROOT}/in" "${HDFS_TEST_ROOT}/out" "${RED_CONF}" ;;
     stage2)
+        # Single-pass isolation: companion.stage2.rounds defaults to 1, so don't
+        # pass it. Do NOT pass -D companion.stage2.rounds=K (K>1) — see NOTE above.
         submit companion.stage2.Stage2Job \
             "${HDFS_TEST_ROOT}/in" "${HDFS_TEST_ROOT}/out" "${RED_CONF}" ;;
     stage3)
@@ -182,10 +192,14 @@ decode() {  # <hdfs-or-file-path> -> remote command emitting canonical lines
     fi
 }
 post() {  # comparison normalizer for the captured lines
+    # Strip CR first: a Windows checkout (core.autocrlf=true) leaves the .csv
+    # golden with CRLF endings, but Hadoop TextOutputFormat emits LF. Without
+    # this, diff -u flags all rows as changed even when the data is identical
+    # (the byte-for-byte difference is just a trailing \r on the golden side).
     case "${COMPARE}" in
-        multiset) echo "sort" ;;
-        set)      echo "sort -u" ;;
-        ordered)  echo "cat" ;;
+        multiset) echo "tr -d '\\r' | sort" ;;
+        set)      echo "tr -d '\\r' | sort -u" ;;
+        ordered)  echo "tr -d '\\r' | cat" ;;
     esac
 }
 

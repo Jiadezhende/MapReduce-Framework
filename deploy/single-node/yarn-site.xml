@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Single-node Hadoop 3.3.6 — yarn-site.xml
+  32c / 64G / ~500G. This host is the sole ResourceManager AND NodeManager.
+
+  Memory budget (64 G total):
+    ~16 G reserved for OS + page cache + co-located daemons
+          (NN 4G / DN 2G / RM 2G / NM 2G / JHS 1G ≈ 11 G, see hadoop-env.sh)
+    ~48 G left for the NM container pool below.
+  vCores: 28 of 32 to the pool, 4 left for daemons/OS → vCores are the real
+  concurrency cap (map 2G→24 by mem but 28 by vcore; reduce 3G→16 by mem).
+
+  Placeholders:
+    __SERVER_HOST__   this server's hostname
+    __SHUFFLE_VOL__   mount point of the shuffle disk (e.g. /data/shuffle); this is
+                      where Stage2 spill lands — the real disk hog, sized by K
+  See docs/single-node-deploy.md.
+-->
+<configuration>
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>__SERVER_HOST__</value>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.aux-services</name>
+    <value>mapreduce_shuffle</value>
+  </property>
+
+  <!-- Container pool: 48 G / 28 vcores. -->
+  <property>
+    <name>yarn.nodemanager.resource.memory-mb</name>
+    <value>49152</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
+    <value>28</value>
+  </property>
+  <property>
+    <name>yarn.scheduler.minimum-allocation-mb</name>
+    <value>1024</value>
+  </property>
+  <property>
+    <name>yarn.scheduler.maximum-allocation-mb</name>
+    <value>8192</value>
+  </property>
+  <property>
+    <name>yarn.scheduler.maximum-allocation-vcores</name>
+    <value>28</value>
+  </property>
+
+  <!-- Single big-heap JVMs occasionally trip the vmem check on Linux; disable it
+       (standard practice) and rely on pmem limits instead. -->
+  <property>
+    <name>yarn.nodemanager.vmem-check-enabled</name>
+    <value>false</value>
+  </property>
+
+  <!-- Shuffle spill + container logs land on the ~500G volume. local-dirs and
+       log-dirs are INDEPENDENT disk-health axes; both must point at space with
+       headroom or the NM goes UNHEALTHY. -->
+  <property>
+    <name>yarn.nodemanager.local-dirs</name>
+    <value>__SHUFFLE_VOL__/nm-local</value>
+  </property>
+  <property>
+    <name>yarn.nodemanager.log-dirs</name>
+    <value>__SHUFFLE_VOL__/nm-logs</value>
+  </property>
+
+  <!-- Keep the 95% health line: on a tight disk the safety margin matters more
+       than squeezing the last few %. STAGE2_ROUNDS (env.sh) is the lever that
+       keeps the shuffle peak under this line, not a higher threshold. -->
+  <property>
+    <name>yarn.nodemanager.disk-health-checker.max-disk-utilization-per-disk-percentage</name>
+    <value>95</value>
+  </property>
+
+  <!-- Log aggregation off: on one node the userlogs are already local; keeping
+       them on local-dirs avoids a second HDFS copy of every container's logs. -->
+  <property>
+    <name>yarn.log-aggregation-enable</name>
+    <value>false</value>
+  </property>
+</configuration>

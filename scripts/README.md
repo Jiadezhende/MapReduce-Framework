@@ -186,7 +186,7 @@ scripts/cluster_test.sh --stage stage3 --dry-run         # 只打印计划
 
 | 变量 | 默认 | 含义 |
 |---|---|---|
-| `MASTER_HOST` | `master` | 提交目标主机的 ssh 别名 |
+| `MASTER_HOST` | `master` | 提交目标主机的 ssh 别名（单机部署下＝那台独立服务器，详见 [docs/single-node-deploy.md](../docs/single-node-deploy.md)） |
 | `HADOOP_BIN` | `hadoop` | master 上的 hadoop 可执行（可填绝对路径） |
 | `HADOOP_CONF_DIR` | `/etc/hadoop/conf` | master 端 hadoop 配置目录 |
 | `LOCAL_DATA_DIR` | 仓库根 | 本地项目根（找 `pom.xml` / `*/target/*.jar`） |
@@ -196,8 +196,9 @@ scripts/cluster_test.sh --stage stage3 --dry-run         # 只打印计划
 | `HDFS_TEST_ROOT_BASE` | `${COMPANION_ROOT}/test` | `cluster_test` 隔离根 |
 | `REMOTE_SUBMIT_BASE` | `/tmp/companion/submit` | master 本地暂存 jar 的目录 |
 | `YARN_QUEUE` | `default` | YARN 队列 |
-| `REDUCERS_1D` / `_7D` / `_31D` | `8` / `32` / `32` | 各 phase 的统一 reducer 数（驱动 stage0a/1/2/3） |
-| `TUNE_1D` / `_7D` / `_31D` | 空 / 空 / 容器+排序调优串 | 各 phase 的额外 `-D`（31d 默认收紧容器内存、增大 map 排序缓冲） |
+| `REDUCERS_1D` / `_7D` / `_31D` | `8` / `24` / `24` | 各 phase 的统一 reducer 数（驱动 stage0a/1/2/3；单机 28 vcore 池下收紧） |
+| `TUNE_1D` / `_7D` / `_31D` | 空 / `io.sort.mb=256` / 容器+排序调优串 | 各 phase 的额外 `-D`（31d 默认增大容器+map 排序缓冲、gzip shuffle） |
+| `STAGE2_ROUNDS_1D` / `_7D` / `_31D` | `1` / `2` / `6` | Stage2 pair-hash 分片轮数；单机磁盘核心杠杆，把 shuffle 驻留峰值压到 ~1/N（详见 [single-node-deploy.md §5](../docs/single-node-deploy.md)） |
 | `JAVA8_HOME` | 未设 | 指向 JDK 8；设了则 `cluster_run.sh` 自动用它构建并校验 1.8 |
 | `SSH_THROTTLE_SECS` | `1.5` | `remote_ssh`/`remote_scp` 每条连接前的节流间隔（秒），降低触发源 IP 限流的概率；网络敏感可调大 |
 | `SSH_MAX_RETRIES` | `6` | ssh/scp 连接级失败（exit 255）的最大重试次数 |
