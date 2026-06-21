@@ -165,8 +165,36 @@ bash deploy/single-node/bootstrap.sh
 
 ## 测试与正确性
 
-- **单元测试 / golden 夹具**：`mvn test` 运行各模块单测；`tests/data/fixtures/` 存有 Stage0/1/2 的字节级 golden 输出，用于跨 stage 对账，重生方式见 [scripts/regenerate_fixtures.sh](scripts/regenerate_fixtures.sh) 与 [docs/fixtures.md](docs/fixtures.md)。
-- **正确性基线**：`baseline/` 提供 Pandas（小数据）与 PySpark（7d）两套独立实现，`diff_baseline.py` 把 MR 输出与基线做 diff 生成 JSON 报告，语义对齐规范见 [baseline/README.md](baseline/README.md) 与 [docs/reference-semantics.md](docs/reference-semantics.md)。
+测试分三层，覆盖范围不同，**理解各层验证什么、不验证什么很重要**。
+
+### 1. 单元测试（`mvn test` / CI 自动）
+
+- 各模块单测用 Hadoop `LocalJobRunner` 跑**真实的 Stage Job**（真 Mapper/Reducer/Partitioner，非 mock），在小输入上验证每个 stage 的局部逻辑：Stage1 的 J1a+J1b 两轮去重、Stage2 的 distinct 计数 / k.min 过滤 / HLL / 多轮分片、Stage3 的排序与 TopN 等。
+- golden 夹具 `tests/data/fixtures/`（`filtered.seq` / `pair_loc_slot.seq` / `companions.csv`）由 [`FixtureGenerator`](common/src/test/java/companion/io/FixtureGenerator.java) 生成——它是一份**独立的单进程参考实现**，实现 [docs/reference-semantics.md](docs/reference-semantics.md) 定义的**理想语义**，**不是**跑生产 Job 产出的。`FixtureGoldenRoundTripTest` 校验夹具与该参考实现一致、且 Writable 字节布局稳定。重生见 [scripts/regenerate_fixtures.sh](scripts/regenerate_fixtures.sh) 与 [docs/fixtures.md](docs/fixtures.md)。
+
+> ⚠️ **理想参考 ≠ 生产实现。** 生产 Job 出于性能/内存用了近似与补偿手段，与理想参考在算法上不同，只在 mini.csv + 默认参数下数值吻合：
+> - **Stage0**：生产用 BloomFilter（可能假阳性、多保留极少数单次车），参考用精确频次集合；
+> - **Stage1**：生产用 `(loc, slot/2)` 两轮 J1a/J1b 补偿，参考用全 loc 理想滑窗（二者仅在 `deltaT ≤ slotSize` 不变量下等价）；
+> - **Stage2**：生产 distinct 数超过 `hll.threshold` 时切 HLL 近似计数，参考全程精确。
+>
+> 因此 `mvn test` 保证的是「**每个 stage 的局部逻辑正确 + 参考实现自洽**」，**并不**直接验证「生产产出 == 理想语义」。
+
+### 2. 集群隔离测试（[`scripts/cluster_test.sh`](scripts/cluster_test.sh) / 手动、需真集群）
+
+这一层才真正把**真实 Stage Job 的产出**与理想 golden 对账，并使用与生产一致的多 reducer、shaded jar、HDFS committer。比较方法按上述差异**逐 stage 量身设计**：
+
+| stage | 比较方法 | 如何消化「理想 vs 生产」差异 |
+|---|---|---|
+| stage0 | 超集 + 有界 delta | 生产 ⊇ 理想，多出行数 ≤ 100，容忍 Bloom 假阳性 |
+| stage1 | 严格集合相等 | J1b 上线后生产见证集应当 == 理想见证集 |
+| stage2 | 单轮严格相等 | 锁定 `rounds=1`；多轮分片并集等价性由单测覆盖 |
+| stage3 | 有序相等 | 验证全局排序顺序 |
+
+> ⚠️ **这道「生产 ↔ 理想」对账只存在于上面这个手动脚本，不在 CI 里。** CI（`.github/workflows/ci.yml`）只跑 `mvn -B verify`。改动任一 Stage 的算法后，正确性回归需手动 `scripts/cluster_test.sh --stage <stageX>` 验证；否则破坏 Stage 语义的改动可能在 CI 仍为绿。
+
+### 3. 端到端正确性基线
+
+`baseline/` 提供 Pandas（小数据）与 PySpark（7d）两套独立实现，`diff_baseline.py` 把整条管线的 MR 输出与基线做 diff 生成 JSON 报告。语义对齐规范见 [baseline/README.md](baseline/README.md) 与 [docs/reference-semantics.md](docs/reference-semantics.md)。
 
 ## 输出
 
