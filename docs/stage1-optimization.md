@@ -1,5 +1,7 @@
 # Stage1 性能优化需求
 
+> 状态：**问题定位**。本文档汇总 Stage1 倾斜/性能问题与候选优化项（S1-C*/S1-A* 编号），部分已实施（见 [stage1-vid-bucket-rewrite.md](stage1-vid-bucket-rewrite.md)），部分待评审（见 [stage1-bucket-dedup.md](stage1-bucket-dedup.md)）。
+
 ## TL;DR
 
 1d 数据下 Stage1 **单趟** wall-time ≈ 10 min，双趟串行 ≈ 20 min。最大异常点是单趟内 reduce 平均 task time 仅 3.3 min（197 s），wall-time 却拖到 10 min——**倾斜系数 ≈ 3×**，叠加 1 个 killed reducer 的重试。先治倾斜，再谈双趟并行。

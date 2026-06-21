@@ -30,9 +30,11 @@ derby.log
 # every read/write, so we keep them out of git and let Hadoop recompute them.
 tests/data/fixtures/.*.crc
 
-# Logs
+# Logs and local run outputs
+# log/ (单数) 是单机/集群脚本拉回的本地运行产物（counter、csv、metrics 等）
 *.log
 logs/
+log/
 tmp_stage3_in/
 
 # Python baseline — local venv, bytecode, and run outputs (CSV is already
